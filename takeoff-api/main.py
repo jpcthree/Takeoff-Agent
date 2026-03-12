@@ -1,0 +1,61 @@
+"""
+Takeoff Agent — FastAPI service wrapping the existing Python calculators,
+PDF converter, and Excel exporter.
+"""
+
+import os
+import sys
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Add the scripts directory to the Python path so we can import calculators
+SCRIPTS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    ".claude", "skills", "takeoff", "scripts",
+)
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+# Also add the project root for config/ access
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from routers import calculate, pdf, export  # noqa: E402
+
+app = FastAPI(
+    title="Takeoff Agent API",
+    description="Construction takeoff calculation, PDF processing, and Excel export",
+    version="1.0.0",
+)
+
+# CORS — allow the Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(calculate.router, prefix="/calculate", tags=["Calculate"])
+app.include_router(pdf.router, prefix="/pdf", tags=["PDF"])
+app.include_router(export.router, prefix="/export", tags=["Export"])
+
+
+@app.get("/")
+async def root():
+    return {"service": "Takeoff Agent API", "version": "1.0.0", "status": "ok"}
+
+
+@app.get("/costs/default")
+async def get_default_costs():
+    """Return the default cost database."""
+    import json
+
+    costs_path = os.path.join(PROJECT_ROOT, "config", "default_costs.json")
+    with open(costs_path) as f:
+        return json.load(f)

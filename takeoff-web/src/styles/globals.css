@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-primary: #2F5496;
+  --color-primary-dark: #1F3864;
+  --color-primary-light: #D6E4F0;
+  --color-sidebar: #1a2332;
+  --color-sidebar-text: #94a3b8;
+  --color-sidebar-text-active: #ffffff;
+  --color-input-cell: #FFF2CC;
+  --color-subtotal: #E2EFDA;
+  --color-trade-header: #D6E4F0;
+  --color-grand-total: #1F3864;
+
+  --color-status-draft: #6B7280;
+  --color-status-analyzing: #3B82F6;
+  --color-status-in-progress: #F59E0B;
+  --color-status-complete: #10B981;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  --primary: #2F5496;
+  --primary-dark: #1F3864;
+  --sidebar-bg: #1a2332;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-active: #ffffff;
+  --input-cell-bg: #FFF2CC;
+  --subtotal-bg: #E2EFDA;
+  --trade-header-bg: #D6E4F0;
+  --grand-total-bg: #1F3864;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numbers for spreadsheet */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Dialog animation */
+@keyframes dialog-overlay-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialog-content-show {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.animate-dialog-overlay {
+  animation: dialog-overlay-show 150ms ease-out;
+}
+
+.animate-dialog-content {
+  animation: dialog-content-show 150ms ease-out;
+}
+
+/* Dropdown animation */
+@keyframes dropdown-show {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-dropdown {
+  animation: dropdown-show 150ms ease-out;
+}
+
+/* Toast slide-up animation */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 200ms ease-out;
+}
