@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import openpyxl; print\\(openpyxl.__version__\\)\")",
+      "Bash(python3 -c \"import fitz; print\\(fitz.__version__\\)\")",
+      "Bash(python3 -c \"import pdf2image; print\\(''pdf2image available''\\)\")",
+      "Bash(python3 -c \"import PyPDF2; print\\(PyPDF2.__version__\\)\")",
+      "Bash(python3 -c \"import pip; pip.main\\([''list'']\\)\")",
+      "Bash(pip3 list)",
+      "Bash(python3 -m pip list)",
+      "WebSearch",
+      "Bash(chmod +x \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/Takeoff Agent/.claude/skills/takeoff/scripts/setup_env.sh\")",
+      "Bash(bash \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/Takeoff Agent/.claude/skills/takeoff/scripts/setup_env.sh\")",
+      "Bash(source .venv/bin/activate)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(pdftotext -f 1 -l 13 \"/Users/jpcthree/Downloads/4747EMansfield_Combined_25-1110.pdf\" -)",
+      "Bash(python /tmp/build_drywall_v2.py)",
+      "Bash(find '/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/Takeoff Agent' -name *.py -type f)",
+      "Bash(find '/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/Takeoff Agent' -name *test* -o -name *example* -o -name *adu* -o -name *noble*)",
+      "Bash(ls -la \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent/\")",
+      "Bash(gh auth:*)",
+      "Bash(gh repo:*)",
+      "Bash(ls \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent/\")"
+    ]
+  }
+}
