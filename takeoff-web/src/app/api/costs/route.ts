@@ -4,16 +4,17 @@ import path from 'path';
 
 export async function GET() {
   try {
-    // Try loading from the project's config directory
-    const configPath = path.resolve(
-      process.cwd(),
-      '..',
-      'config',
-      'default_costs.json'
-    );
+    // Try loading from the web project's own config directory first (works on Vercel)
+    const localConfigPath = path.resolve(process.cwd(), 'config', 'default_costs.json');
+    if (fs.existsSync(localConfigPath)) {
+      const data = JSON.parse(fs.readFileSync(localConfigPath, 'utf-8'));
+      return NextResponse.json(data);
+    }
 
-    if (fs.existsSync(configPath)) {
-      const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    // Try loading from the parent project's config directory (local dev)
+    const parentConfigPath = path.resolve(process.cwd(), '..', 'config', 'default_costs.json');
+    if (fs.existsSync(parentConfigPath)) {
+      const data = JSON.parse(fs.readFileSync(parentConfigPath, 'utf-8'));
       return NextResponse.json(data);
     }
 
