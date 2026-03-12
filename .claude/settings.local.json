@@ -22,7 +22,21 @@
       "Bash(ls -la \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent/\")",
       "Bash(gh auth:*)",
       "Bash(gh repo:*)",
-      "Bash(ls \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent/\")"
+      "Bash(ls \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent/\")",
+      "Bash(ls -lt /Users/jpcthree/Downloads/KIB*.xlsx)",
+      "Bash(ls -lt ~/Downloads/RIS*)",
+      "Bash(ls -lt ~/Downloads/*nvoice*)",
+      "Bash(ls -lt ~/Downloads/Service*FCG*)",
+      "Bash(ls -lt ~/Downloads/*.xlsx)",
+      "Bash(ls -lt ~/Downloads/*Spectra* ~/Downloads/*Customer*Statement* ~/Downloads/*AR*)",
+      "Bash(find \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent\" -type f -name \"*.py\" -o -name \"*.json\" -o -name \"*.xlsx\")",
+      "Bash(ls -lah \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent/\")",
+      "Bash(ls -laR \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent/.claude\")",
+      "Bash(find \"/Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/Claude/AP & AR Agent\" -type f -name \"*.py\")",
+      "Bash(python -m scrapers.scrape_spectra \"/Users/jpcthree/Downloads/AR Customer Statements Spectra.xls\")",
+      "Bash(ls /Users/jpcthree/Downloads/*KIB*Invoices* /Users/jpcthree/Downloads/*KIB*)",
+      "Read(//Users/jpcthree/Library/Mobile Documents/com~apple~CloudDocs/**)",
+      "Read(//Users/jpcthree/**)"
     ]
   }
 }
