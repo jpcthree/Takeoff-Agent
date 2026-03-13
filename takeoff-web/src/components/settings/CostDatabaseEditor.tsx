@@ -42,11 +42,7 @@ const TRADE_SECTIONS = [
   'drywall',
   'roofing',
   'gutters',
-  'hvac',
-  'electrical',
-  'plumbing',
   'exterior',
-  'interior_finishes',
 ] as const;
 
 const TRADE_LABELS: Record<string, string> = {
@@ -56,11 +52,7 @@ const TRADE_LABELS: Record<string, string> = {
   drywall: 'Drywall',
   roofing: 'Roofing',
   gutters: 'Gutters & Downspouts',
-  hvac: 'HVAC',
-  electrical: 'Electrical',
-  plumbing: 'Plumbing',
-  exterior: 'Exterior',
-  interior_finishes: 'Interior Finishes',
+  exterior: 'Exterior Painting',
 };
 
 function formatKey(key: string): string {

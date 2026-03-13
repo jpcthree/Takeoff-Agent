@@ -18,26 +18,26 @@ function WorkspaceInner() {
   const params = useParams();
   const { dispatch } = useProjectStore();
 
-  // Load project meta from sessionStorage for local projects
+  // Load project meta from sessionStorage (works for both local and Supabase projects)
   useEffect(() => {
     const id = params?.id as string;
-    if (id?.startsWith('local-')) {
-      try {
-        const stored = sessionStorage.getItem(`project-meta-${id}`);
-        if (stored) {
-          const meta = JSON.parse(stored);
-          dispatch({
-            type: 'SET_PROJECT_META',
-            meta: {
-              name: meta.name || '',
-              address: meta.address || '',
-              buildingType: meta.buildingType || 'residential',
-            },
-          });
-        }
-      } catch {
-        // Ignore parse errors
+    if (!id) return;
+    try {
+      const stored = sessionStorage.getItem(`project-meta-${id}`);
+      if (stored) {
+        const meta = JSON.parse(stored);
+        dispatch({
+          type: 'SET_PROJECT_META',
+          meta: {
+            name: meta.name || '',
+            address: meta.address || '',
+            buildingType: meta.buildingType || 'residential',
+            selectedTrades: meta.selectedTrades || [],
+          },
+        });
       }
+    } catch {
+      // Ignore parse errors
     }
   }, [params?.id, dispatch]);
 

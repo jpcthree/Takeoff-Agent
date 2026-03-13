@@ -30,7 +30,7 @@ function buildSystemPrompt(context: {
     `\`\`\``,
     ``,
     `Available action types:`,
-    `- recalculate_trade: Re-run a specific trade calculator (trades: framing, insulation, drywall, roofing, hvac, electrical, plumbing, exterior, interior)`,
+    `- recalculate_trade: Re-run a specific trade calculator (trades: framing, insulation, drywall, roofing, exterior)`,
     `- update_building_model: Modify a field on the building model, e.g. {"type": "update_building_model", "changes": {"roof_insulation_r_value": 60}}`,
     `- add_line_item: Add a manual line item`,
     `- remove_line_item: Remove a line item by description`,

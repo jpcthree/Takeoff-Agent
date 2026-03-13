@@ -5,9 +5,11 @@ import { Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FileUploadZone } from './FileUploadZone';
+import { AVAILABLE_TRADES } from '@/lib/api/python-service';
 
 const STEPS = [
   { label: 'Project Details' },
+  { label: 'Select Trades' },
   { label: 'Upload Plans' },
 ];
 
@@ -16,6 +18,7 @@ export interface ProjectFormData {
   address: string;
   clientName: string;
   buildingType: string;
+  selectedTrades: string[];
   files: File[];
 }
 
@@ -82,6 +85,7 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
     address: '',
     clientName: '',
     buildingType: 'residential',
+    selectedTrades: AVAILABLE_TRADES.map((t) => t.id), // all selected by default
     files: [],
   });
 
@@ -92,8 +96,19 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
+  const toggleTrade = (tradeId: string) => {
+    setFormData((prev) => {
+      const current = prev.selectedTrades;
+      const next = current.includes(tradeId)
+        ? current.filter((t) => t !== tradeId)
+        : [...current, tradeId];
+      return { ...prev, selectedTrades: next };
+    });
+  };
+
   const canAdvance = () => {
     if (step === 0) return formData.name.trim().length > 0;
+    if (step === 1) return formData.selectedTrades.length > 0;
     return true;
   };
 
@@ -164,6 +179,66 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
         {step === 1 && (
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              Select Trades
+            </h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Choose which trades you need takeoffs for. You can select one or more.
+            </p>
+            <div className="space-y-3">
+              {AVAILABLE_TRADES.map((trade) => {
+                const isSelected = formData.selectedTrades.includes(trade.id);
+                return (
+                  <label
+                    key={trade.id}
+                    className={[
+                      'flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all',
+                      isSelected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-gray-200 hover:border-gray-300 bg-white',
+                    ].join(' ')}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleTrade(trade.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/40"
+                    />
+                    <span className={[
+                      'text-sm font-medium',
+                      isSelected ? 'text-gray-900' : 'text-gray-600',
+                    ].join(' ')}>
+                      {trade.label}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => updateField('selectedTrades', AVAILABLE_TRADES.map((t) => t.id))}
+                className="text-xs text-primary hover:text-primary/80 font-medium cursor-pointer"
+              >
+                Select All
+              </button>
+              <span className="text-gray-300">|</span>
+              <button
+                type="button"
+                onClick={() => updateField('selectedTrades', [])}
+                className="text-xs text-gray-500 hover:text-gray-700 font-medium cursor-pointer"
+              >
+                Clear All
+              </button>
+              <span className="text-xs text-gray-400 ml-auto">
+                {formData.selectedTrades.length} of {AVAILABLE_TRADES.length} selected
+              </span>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
               Upload Plans
             </h2>
             <p className="text-sm text-gray-500 mb-6">
@@ -177,7 +252,7 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
               <p className="text-xs text-blue-700">
                 <strong>What happens next:</strong> Your project will open in the
                 workspace where you can view your plans, run AI analysis to extract
-                building details, and generate a full cost estimate.
+                building details, and generate cost estimates for your selected trades.
               </p>
             </div>
           </div>

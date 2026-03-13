@@ -170,11 +170,60 @@ export async function getDefaultCosts(): Promise<Record<string, unknown>> {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Available Trades
+// ---------------------------------------------------------------------------
+
+/** Trades available for takeoff selection. */
+export const AVAILABLE_TRADES = [
+  { id: 'framing', label: 'Framing' },
+  { id: 'insulation', label: 'Insulation' },
+  { id: 'drywall', label: 'Drywall' },
+  { id: 'roofing', label: 'Roofing' },
+  { id: 'exterior', label: 'Exterior Painting' },
+] as const;
+
+export type TradeId = (typeof AVAILABLE_TRADES)[number]['id'];
+
+export function getTradeLabel(tradeId: string): string {
+  const trade = AVAILABLE_TRADES.find((t) => t.id === tradeId);
+  return trade?.label ?? tradeId;
+}
+
 export async function listTrades(): Promise<{ trades: string[] }> {
   return {
-    trades: [
-      'framing', 'insulation', 'drywall', 'roofing',
-      'hvac', 'electrical', 'plumbing', 'exterior', 'interior',
-    ],
+    trades: AVAILABLE_TRADES.map((t) => t.id),
+  };
+}
+
+/**
+ * Run calculators for a specific set of trades.
+ * Calls per-trade endpoints and merges results.
+ */
+export async function calculateSelectedTrades(
+  trades: string[],
+  buildingModel: Record<string, unknown>,
+  costs?: Record<string, unknown>,
+  signal?: AbortSignal,
+  onTradeComplete?: (trade: string, index: number, total: number) => void
+): Promise<CalculateAllResponse> {
+  const allItems: LineItemDict[] = [];
+  const completedTrades: string[] = [];
+
+  for (let i = 0; i < trades.length; i++) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const trade = trades[i];
+    const result = await calculateTrade(trade, buildingModel, costs, signal);
+
+    allItems.push(...result.items);
+    completedTrades.push(trade);
+    onTradeComplete?.(trade, i + 1, trades.length);
+  }
+
+  return {
+    items: allItems,
+    count: allItems.length,
+    trades: completedTrades,
   };
 }

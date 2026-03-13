@@ -13,6 +13,8 @@ export interface ProjectMeta {
   address: string;
   clientName: string;
   buildingType: string;
+  /** Which trades to run takeoffs for. Empty = all available. */
+  selectedTrades: string[];
 }
 
 export type AnalysisStatus =
@@ -80,7 +82,7 @@ const initialState: ProjectState = {
   lineItems: [],
   rawLineItems: [],
   costs: null,
-  projectMeta: { name: '', address: '', clientName: '', buildingType: 'residential' },
+  projectMeta: { name: '', address: '', clientName: '', buildingType: 'residential', selectedTrades: [] },
   analysisStatus: 'idle',
   error: null,
   analysisMessages: [],

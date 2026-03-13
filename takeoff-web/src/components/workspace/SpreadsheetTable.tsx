@@ -4,6 +4,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { SpreadsheetToolbar } from './SpreadsheetToolbar';
 import { useProjectStore } from '@/hooks/useProjectStore';
+import { getTradeLabel } from '@/lib/api/python-service';
 import type {
   SpreadsheetLineItem,
   TradeSubtotal,
@@ -278,7 +279,7 @@ function SpreadsheetTable() {
                       <td colSpan={COLUMNS.length} className="px-2 py-2 font-semibold text-gray-800">
                         <span className="inline-flex items-center gap-1.5">
                           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          {trade}
+                          {getTradeLabel(trade)}
                           <span className="font-normal text-gray-500 ml-2">({tradeItems.length} items)</span>
                         </span>
                       </td>
@@ -335,7 +336,7 @@ function SpreadsheetTable() {
                     {!isCollapsed && sub && (
                       <tr className="bg-[#E2EFDA] font-semibold">
                         <td className="px-2 py-1.5 border-r border-gray-200" />
-                        <td className="px-2 py-1.5 border-r border-gray-200">{trade} Subtotal</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200">{getTradeLabel(trade)} Subtotal</td>
                         <td className="px-2 py-1.5 border-r border-gray-200" />
                         <td className="px-2 py-1.5 border-r border-gray-200" />
                         <td className="px-2 py-1.5 border-r border-gray-200" />

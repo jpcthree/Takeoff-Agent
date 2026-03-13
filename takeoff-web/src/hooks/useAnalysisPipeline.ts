@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from 'react';
 import { useProjectStore } from './useProjectStore';
-import { calculateAll } from '@/lib/api/python-service';
+import { calculateSelectedTrades, AVAILABLE_TRADES, getTradeLabel } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
 import { analyzeBlueprint, type AnalysisProgress } from '@/lib/services/blueprint-analyzer';
 
@@ -12,6 +12,8 @@ import { analyzeBlueprint, type AnalysisProgress } from '@/lib/services/blueprin
  *
  * Claude calls run directly from the browser (no Vercel function involved)
  * to avoid body size and timeout limits.
+ *
+ * Only runs calculators for the trades selected during project creation.
  */
 export function useAnalysisPipeline() {
   const {
@@ -127,8 +129,8 @@ export function useAnalysisPipeline() {
   );
 
   /**
-   * Run all 9 trade calculators against the current building model.
-   * Calls the Python API on Railway (small JSON payload, fast).
+   * Run trade calculators for only the selected trades.
+   * Calls per-trade Python API endpoints on Railway.
    */
   const runCalculators = useCallback(
     async (model?: Record<string, unknown>) => {
@@ -143,14 +145,24 @@ export function useAnalysisPipeline() {
       const controller = new AbortController();
       abortRef.current = controller;
 
+      // Determine which trades to run
+      const selectedTrades = state.projectMeta.selectedTrades.length > 0
+        ? state.projectMeta.selectedTrades
+        : AVAILABLE_TRADES.map((t) => t.id); // fallback: all available trades
+
       setStatus('calculating');
-      addAnalysisMessage('Running trade calculators...');
+      const tradeLabels = selectedTrades.map(getTradeLabel).join(', ');
+      addAnalysisMessage(`Running calculators for: ${tradeLabels}`);
 
       try {
-        const result = await calculateAll(
+        const result = await calculateSelectedTrades(
+          selectedTrades,
           buildingModel,
           state.costs || undefined,
-          controller.signal
+          controller.signal,
+          (trade, index, total) => {
+            addAnalysisMessage(`✓ ${getTradeLabel(trade)} complete (${index}/${total})`);
+          }
         );
 
         // Transform Python LineItems to frontend SpreadsheetLineItems
@@ -178,7 +190,7 @@ export function useAnalysisPipeline() {
         }
       }
     },
-    [state.buildingModel, state.costs, setLineItems, setStatus, setError, addAnalysisMessage]
+    [state.buildingModel, state.costs, state.projectMeta.selectedTrades, setLineItems, setStatus, setError, addAnalysisMessage]
   );
 
   /**

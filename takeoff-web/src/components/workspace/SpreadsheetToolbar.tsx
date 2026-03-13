@@ -4,7 +4,7 @@ import React, { useState, useCallback } from 'react';
 import { Plus, Download, ChevronsDownUp, ChevronsUpDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useProjectStore } from '@/hooks/useProjectStore';
-import { exportXlsx } from '@/lib/api/python-service';
+import { exportXlsx, getTradeLabel } from '@/lib/api/python-service';
 
 interface SpreadsheetToolbarProps {
   trades: string[];
@@ -112,7 +112,7 @@ function SpreadsheetToolbar({
                     onChange={() => toggleTrade(trade)}
                     className="rounded border-gray-300 text-primary focus:ring-primary/40"
                   />
-                  {trade}
+                  {getTradeLabel(trade)}
                 </label>
               );
             })}

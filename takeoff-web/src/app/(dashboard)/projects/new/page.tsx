@@ -24,6 +24,7 @@ export default function NewProjectPage() {
           address: data.address,
           clientName: data.clientName,
           buildingType: data.buildingType,
+          selectedTrades: data.selectedTrades,
         })
       );
       // Store PDF files in IndexedDB so workspace can pick them up
@@ -56,6 +57,18 @@ export default function NewProjectPage() {
             .single();
 
           if (error) throw error;
+
+          // Store selected trades in sessionStorage for the workspace
+          sessionStorage.setItem(
+            `project-meta-${project.id}`,
+            JSON.stringify({
+              name: data.name,
+              address: data.address,
+              clientName: data.clientName,
+              buildingType: data.buildingType,
+              selectedTrades: data.selectedTrades,
+            })
+          );
 
           // Store PDFs in IndexedDB for the workspace to load
           if (data.files.length > 0) {
