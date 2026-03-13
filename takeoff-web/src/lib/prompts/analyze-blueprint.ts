@@ -34,7 +34,7 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
       "is_exterior": true,
       "is_fire_rated": false,
       "stud_spacing": 16,
-      "insulation_type": "fiberglass_batt|mineral_wool_batt|closed_cell_spray|open_cell_spray|blown_cellulose|rigid_foam|none",
+      "insulation_type": "batt|blown|spray_foam_open|spray_foam_closed|rigid|none",
       "insulation_r_value": 0,
       "drywall_type": "standard_1_2|moisture_resistant|fire_rated_5_8|cement_board|mold_resistant",
       "sound_insulation": false,
@@ -83,11 +83,24 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
     "perimeter_lf": 0,
     "area_sf": 0
   },
+  "crawlspace_area": 0,
+  "crawlspace_height": {"feet": 3, "inches": 0},
+  "crawlspace_vapor_barrier": true,
+  "crawlspace_wall_insulation": false,
+  "crawlspace_perimeter": 0,
+  "crawlspace_wall_insulation_type": "rigid|spray_foam_closed",
+  "crawlspace_wall_insulation_r_value": 10,
   "siding_type": "vinyl|fiber_cement|wood_lap|wood_shingle|brick|stone|stucco|metal",
   "has_attic": false,
+  "attic_area": 0,
+  "attic_insulation_type": "blown|batt|spray_foam_open|spray_foam_closed",
+  "attic_insulation_r_value": 38,
   "has_cathedral_ceiling": false,
-  "vapor_barrier": false,
-  "house_wrap": false,
+  "roof_insulation_type": "spray_foam_open|spray_foam_closed|rigid|none",
+  "roof_insulation_r_value": 0,
+  "vapor_barrier": true,
+  "house_wrap": true,
+  "air_sealing": true,
   "gutter_runs": [
     {
       "id": "g1",
@@ -140,8 +153,9 @@ const ANALYSIS_RULES = `
    - Exterior walls: 2×6
    - Interior walls: 2×4
    - Standard drywall: 1/2" walls, 5/8" ceilings/garages
-7. **Be conservative.** Include items you're unsure about — user can remove them.
-8. **State your assumptions** before the JSON.`;
+7. **Insulation is critical.** For every exterior wall, set insulation_type and R-value. Set attic_area (= footprint area if has_attic). If the foundation is crawlspace, set crawlspace fields. If there's no attic (cathedral/vaulted), set has_cathedral_ceiling=true and roof_insulation fields.
+8. **Be conservative.** Include items you're unsure about — user can remove them.
+9. **State your assumptions** before the JSON.`;
 
 // ---------------------------------------------------------------------------
 // Prompt 1: TEXT-PRIMARY (page has extractable text + small thumbnail)

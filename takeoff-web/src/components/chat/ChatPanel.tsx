@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useCallback } from 'react';
 import { MessageSquare, PanelRightClose, PanelRightOpen, Trash2 } from 'lucide-react';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { useChat } from '@/hooks/useChat';
 import { useProjectStore } from '@/hooks/useProjectStore';
+import { parseActions, executeAction } from '@/lib/actions/chat-actions';
 
 function ChatPanel() {
-  const { state } = useProjectStore();
-  const { projectMeta, buildingModel, lineItems } = state;
+  const { state, updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem } =
+    useProjectStore();
+  const { projectMeta, buildingModel, lineItems, costs } = state;
 
   // Build a summary of line items by trade for the chat context
   const lineItemsSummary = useMemo(() => {
@@ -23,12 +25,36 @@ function ChatPanel() {
       .join('. ');
   }, [lineItems]);
 
-  const { messages, isStreaming, sendMessage, clearMessages } = useChat({
-    projectName: projectMeta.name,
-    projectAddress: projectMeta.address,
-    buildingModel: buildingModel || undefined,
-    lineItemsSummary: lineItemsSummary || undefined,
-  });
+  // Handle action blocks when the assistant finishes streaming
+  const handleStreamComplete = useCallback(
+    async (text: string) => {
+      const actions = parseActions(text);
+      if (actions.length === 0) return;
+
+      for (const action of actions) {
+        await executeAction(action, {
+          updateBuildingModel,
+          replaceTradeItems,
+          addLineItem,
+          removeLineItem,
+          getBuildingModel: () => buildingModel,
+          getCosts: () => costs,
+          getLineItems: () => lineItems,
+        });
+      }
+    },
+    [updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem, buildingModel, costs, lineItems]
+  );
+
+  const { messages, isStreaming, sendMessage, clearMessages } = useChat(
+    {
+      projectName: projectMeta.name,
+      projectAddress: projectMeta.address,
+      buildingModel: buildingModel || undefined,
+      lineItemsSummary: lineItemsSummary || undefined,
+    },
+    { onStreamComplete: handleStreamComplete }
+  );
 
   const [collapsed, setCollapsed] = React.useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);

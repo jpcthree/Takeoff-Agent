@@ -180,8 +180,17 @@ export const AVAILABLE_TRADES = [
   { id: 'insulation', label: 'Insulation' },
   { id: 'drywall', label: 'Drywall' },
   { id: 'roofing', label: 'Roofing' },
+  { id: 'gutters', label: 'Gutters & Downspouts' },
   { id: 'exterior', label: 'Exterior Painting' },
 ] as const;
+
+/**
+ * Maps frontend trade IDs to the Python API endpoint that produces them.
+ * Most trades map 1:1, but gutters are produced by the roofing endpoint.
+ */
+const TRADE_TO_API_ENDPOINT: Record<string, string> = {
+  gutters: 'roofing',
+};
 
 export type TradeId = (typeof AVAILABLE_TRADES)[number]['id'];
 
@@ -198,7 +207,11 @@ export async function listTrades(): Promise<{ trades: string[] }> {
 
 /**
  * Run calculators for a specific set of trades.
- * Calls per-trade endpoints and merges results.
+ *
+ * Handles bundled endpoints: e.g. "gutters" and "roofing" both come from the
+ * Python `/calculate/roofing` endpoint. If either (or both) is selected we
+ * call the endpoint once and filter the returned items to only the requested
+ * trade(s).
  */
 export async function calculateSelectedTrades(
   trades: string[],
@@ -210,15 +223,35 @@ export async function calculateSelectedTrades(
   const allItems: LineItemDict[] = [];
   const completedTrades: string[] = [];
 
-  for (let i = 0; i < trades.length; i++) {
+  // Group selected trades by the API endpoint that produces them.
+  // Most map 1:1 (framing→framing), but gutters→roofing.
+  const endpointToTrades = new Map<string, string[]>();
+  for (const trade of trades) {
+    const endpoint = TRADE_TO_API_ENDPOINT[trade] ?? trade;
+    const existing = endpointToTrades.get(endpoint) ?? [];
+    existing.push(trade);
+    endpointToTrades.set(endpoint, existing);
+  }
+
+  const endpoints = Array.from(endpointToTrades.entries());
+  let progress = 0;
+
+  for (const [endpoint, wantedTrades] of endpoints) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-    const trade = trades[i];
-    const result = await calculateTrade(trade, buildingModel, costs, signal);
+    const result = await calculateTrade(endpoint, buildingModel, costs, signal);
 
-    allItems.push(...result.items);
-    completedTrades.push(trade);
-    onTradeComplete?.(trade, i + 1, trades.length);
+    // Filter items to only the trades the user actually selected.
+    const wantedSet = new Set(wantedTrades);
+    const filtered = result.items.filter((item) => wantedSet.has(item.trade));
+    allItems.push(...filtered);
+    completedTrades.push(...wantedTrades);
+
+    // Report progress for each wanted trade from this endpoint.
+    for (const t of wantedTrades) {
+      progress++;
+      onTradeComplete?.(t, progress, trades.length);
+    }
   }
 
   return {

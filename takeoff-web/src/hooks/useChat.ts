@@ -16,6 +16,11 @@ interface ProjectContext {
   lineItemsSummary?: string;
 }
 
+interface UseChatOptions {
+  /** Called with the final assistant message text when a stream completes. */
+  onStreamComplete?: (messageText: string) => void;
+}
+
 interface UseChatReturn {
   messages: ChatMessage[];
   isStreaming: boolean;
@@ -31,10 +36,12 @@ const WELCOME_MESSAGE: ChatMessage = {
   timestamp: new Date().toISOString(),
 };
 
-export function useChat(context: ProjectContext = {}): UseChatReturn {
+export function useChat(context: ProjectContext = {}, options: UseChatOptions = {}): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const onStreamCompleteRef = useRef(options.onStreamComplete);
+  onStreamCompleteRef.current = options.onStreamComplete;
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -89,6 +96,7 @@ export function useChat(context: ProjectContext = {}): UseChatReturn {
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let fullText = '';
 
         while (true) {
           const { done, value } = await reader.read();
@@ -109,7 +117,7 @@ export function useChat(context: ProjectContext = {}): UseChatReturn {
               const event = JSON.parse(jsonStr);
 
               if (event.type === 'text') {
-                // Append text to the assistant message
+                fullText += event.text;
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMsgId
@@ -118,7 +126,7 @@ export function useChat(context: ProjectContext = {}): UseChatReturn {
                   )
                 );
               } else if (event.type === 'content_block_delta' && event.delta?.text) {
-                // Handle mock response format
+                fullText += event.delta.text;
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMsgId
@@ -127,7 +135,7 @@ export function useChat(context: ProjectContext = {}): UseChatReturn {
                   )
                 );
               } else if (event.type === 'done' || event.type === 'message_stop') {
-                // Stream complete
+                // Stream complete — fire callback for action parsing
               } else if (event.type === 'error') {
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -141,6 +149,11 @@ export function useChat(context: ProjectContext = {}): UseChatReturn {
               // Ignore malformed JSON
             }
           }
+        }
+
+        // Stream finished — notify caller so actions can be parsed & executed
+        if (fullText && onStreamCompleteRef.current) {
+          onStreamCompleteRef.current(fullText);
         }
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;

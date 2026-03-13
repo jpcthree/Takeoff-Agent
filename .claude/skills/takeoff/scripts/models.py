@@ -315,6 +315,17 @@ class Wall:
             "drywall_type": self.drywall_type,
         }
 
+    # Map common Claude-output insulation type strings to canonical values
+    _INSULATION_NORM: dict = {
+        "fiberglass_batt": "batt", "mineral_wool_batt": "batt", "fiberglass": "batt",
+        "closed_cell_spray": "spray_foam_closed", "open_cell_spray": "spray_foam_open",
+        "blown_cellulose": "blown", "rigid_foam": "rigid",
+    }
+
+    @staticmethod
+    def _normalize_insulation(raw: str) -> str:
+        return Wall._INSULATION_NORM.get(raw, raw)
+
     @classmethod
     def from_dict(cls, d: dict) -> Wall:
         return cls(
@@ -325,7 +336,7 @@ class Wall:
             thickness=d.get("thickness", "2x4"),
             stud_spacing=d.get("stud_spacing", 16.0),
             openings=d.get("openings", []),
-            insulation_type=d.get("insulation_type", "batt"),
+            insulation_type=cls._normalize_insulation(d.get("insulation_type", "batt")),
             insulation_r_value=d.get("insulation_r_value", 13.0),
             is_fire_rated=d.get("is_fire_rated", False),
             fire_rating_hours=d.get("fire_rating_hours", 0.0),
@@ -1128,21 +1139,21 @@ class BuildingModel:
             vapor_barrier=d.get("vapor_barrier", True),
             attic_area=d.get("attic_area", 0.0),
             attic_access_points=d.get("attic_access_points", 1),
-            attic_insulation_type=d.get("attic_insulation_type", "blown"),
+            attic_insulation_type=Wall._normalize_insulation(d.get("attic_insulation_type", "blown")),
             attic_insulation_r_value=d.get("attic_insulation_r_value", 38.0),
             crawlspace_area=d.get("crawlspace_area", 0.0),
             crawlspace_height=Dimension.from_dict(d.get("crawlspace_height", {})),
             crawlspace_vapor_barrier=d.get("crawlspace_vapor_barrier", True),
             crawlspace_wall_insulation=d.get("crawlspace_wall_insulation", False),
-            crawlspace_wall_insulation_type=d.get("crawlspace_wall_insulation_type", "rigid"),
+            crawlspace_wall_insulation_type=Wall._normalize_insulation(d.get("crawlspace_wall_insulation_type", "rigid")),
             crawlspace_wall_insulation_r_value=d.get("crawlspace_wall_insulation_r_value", 10.0),
             crawlspace_perimeter=d.get("crawlspace_perimeter", 0.0),
             has_attic=d.get("has_attic", True),
             has_cathedral_ceiling=d.get("has_cathedral_ceiling", False),
-            roof_insulation_type=d.get("roof_insulation_type", "none"),
+            roof_insulation_type=Wall._normalize_insulation(d.get("roof_insulation_type", "none")),
             roof_insulation_r_value=d.get("roof_insulation_r_value", 0.0),
             floor_sound_insulation=d.get("floor_sound_insulation", False),
-            floor_sound_insulation_type=d.get("floor_sound_insulation_type", "batt"),
+            floor_sound_insulation_type=Wall._normalize_insulation(d.get("floor_sound_insulation_type", "batt")),
             floor_sound_insulation_area=d.get("floor_sound_insulation_area", 0.0),
             air_sealing=d.get("air_sealing", False),
             air_sealing_sqft=d.get("air_sealing_sqft", 0.0),
