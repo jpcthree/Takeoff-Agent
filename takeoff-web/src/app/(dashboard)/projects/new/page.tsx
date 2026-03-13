@@ -7,40 +7,66 @@ import {
   CreateProjectWizard,
   type ProjectFormData,
 } from '@/components/projects/CreateProjectWizard';
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 export default function NewProjectPage() {
   const router = useRouter();
 
   const handleComplete = async (data: ProjectFormData) => {
     try {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      // If Supabase is configured, persist to DB
+      if (isSupabaseConfigured()) {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-      if (!user) {
-        router.push('/login');
-        return;
+        if (user) {
+          const { data: project, error } = await supabase
+            .from('projects')
+            .insert({
+              user_id: user.id,
+              name: data.name,
+              address: data.address,
+              client_name: data.clientName,
+              building_type: data.buildingType,
+              status: 'draft',
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+          router.push(`/project/${project.id}`);
+          return;
+        }
       }
 
-      const { data: project, error } = await supabase
-        .from('projects')
-        .insert({
-          user_id: user.id,
+      // No auth / no Supabase — use a local project ID and store meta in sessionStorage
+      const localId = `local-${Date.now().toString(36)}`;
+      sessionStorage.setItem(
+        `project-meta-${localId}`,
+        JSON.stringify({
           name: data.name,
           address: data.address,
-          client_name: data.clientName,
-          building_type: data.buildingType,
-          status: 'draft',
+          clientName: data.clientName,
+          buildingType: data.buildingType,
         })
-        .select()
-        .single();
-
-      if (error) throw error;
-      router.push(`/project/${project.id}`);
+      );
+      router.push(`/project/${localId}`);
     } catch (err) {
       console.error('Failed to create project:', err);
+      // Fallback to local project on any error
+      const localId = `local-${Date.now().toString(36)}`;
+      sessionStorage.setItem(
+        `project-meta-${localId}`,
+        JSON.stringify({
+          name: data.name,
+          address: data.address,
+          clientName: data.clientName,
+          buildingType: data.buildingType,
+        })
+      );
+      router.push(`/project/${localId}`);
     }
   };
 
