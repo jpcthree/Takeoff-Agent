@@ -914,15 +914,22 @@ class GutterRun:
 
     @classmethod
     def from_dict(cls, d: dict) -> GutterRun:
-        return cls(**{k: d.get(k, v) for k, v in
-                      {"id": "", "length": 0.0, "size": "5_inch",
-                       "material": "aluminum", "location": "",
-                       "downspouts": 1, "inside_miters": 0,
-                       "outside_miters": 0,
-                       "style": "k_style", "color": "",
-                       "downspout_size": "2x3",
-                       "downspout_material": "",
-                       "downspout_color": ""}.items()})
+        tf = RoofSection._to_float  # reuse Dimension dict → float converter
+        return cls(
+            id=d.get("id", ""),
+            length=tf(d.get("length", 0.0)),
+            size=d.get("size", "5_inch"),
+            material=d.get("material", "aluminum"),
+            location=d.get("location", ""),
+            downspouts=d.get("downspouts", d.get("downspout_count", 1)),
+            inside_miters=d.get("inside_miters", 0),
+            outside_miters=d.get("outside_miters", 0),
+            style=d.get("style", "k_style"),
+            color=d.get("color", ""),
+            downspout_size=d.get("downspout_size", "2x3"),
+            downspout_material=d.get("downspout_material", ""),
+            downspout_color=d.get("downspout_color", ""),
+        )
 
 
 # ---------------------------------------------------------------------------
