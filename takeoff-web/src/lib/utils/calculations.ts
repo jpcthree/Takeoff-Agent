@@ -1,4 +1,5 @@
-import type { TradeSubtotal, GrandTotal } from '@/lib/types/line-item';
+import type { SpreadsheetLineItem, TradeSubtotal, GrandTotal } from '@/lib/types/line-item';
+import type { LineItemDict } from '@/lib/api/python-service';
 
 export interface RowCalculation {
   materialTotal: number;
@@ -112,4 +113,53 @@ export function calculateGrandTotal(subtotals: TradeSubtotal[]): GrandTotal {
   total.gpm = total.amount > 0 ? total.grossProfit / total.amount : 0;
 
   return total;
+}
+
+/**
+ * Convert a LineItemDict from the Python API into a SpreadsheetLineItem.
+ * Sets user-input fields (unitCost, laborRatePct, unitPrice) to defaults
+ * that can be edited by the user in the spreadsheet.
+ */
+export function pythonLineItemToSpreadsheet(
+  item: LineItemDict,
+  index: number
+): SpreadsheetLineItem {
+  const unitCost = item.material_unit_cost || 0;
+  const quantity = item.quantity || 0;
+  const materialTotal = quantity * unitCost;
+
+  // Labor rate as 0% by default (user inputs their own)
+  const laborRatePct = 0;
+  // Unit price defaults to 0 (user inputs their own)
+  const unitPrice = 0;
+
+  const laborTotal = 0; // laborRatePct * amount, but amount is 0
+  const laborPlusMaterials = materialTotal + laborTotal;
+  const amount = quantity * unitPrice;
+  const grossProfit = amount - laborPlusMaterials;
+  const gpm = amount > 0 ? grossProfit / amount : 0;
+  const materialPct = laborPlusMaterials > 0 ? materialTotal / laborPlusMaterials : 0;
+  const laborPct = laborPlusMaterials > 0 ? laborTotal / laborPlusMaterials : 0;
+
+  return {
+    id: `item-${index}-${Date.now()}`,
+    trade: item.trade,
+    category: item.category,
+    description: item.description,
+    quantity,
+    unit: item.unit,
+    unitCost,
+    laborRatePct,
+    unitPrice,
+    materialTotal,
+    materialPct,
+    laborTotal,
+    laborPct,
+    laborPlusMaterials,
+    amount,
+    grossProfit,
+    gpm,
+    sortOrder: index,
+    isUserAdded: false,
+  };
 }

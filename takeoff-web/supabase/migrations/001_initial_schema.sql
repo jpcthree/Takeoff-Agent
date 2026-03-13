@@ -1,6 +1,11 @@
+-- Enable UUID generation
 create extension if not exists "uuid-ossp";
 
-create table projects (
+-- ============================================
+-- TABLES
+-- ============================================
+
+create table if not exists projects (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references auth.users(id) on delete cascade not null,
   name text not null,
@@ -14,7 +19,7 @@ create table projects (
   updated_at timestamptz default now()
 );
 
-create table project_files (
+create table if not exists project_files (
   id uuid primary key default uuid_generate_v4(),
   project_id uuid references projects(id) on delete cascade not null,
   file_name text not null,
@@ -25,7 +30,7 @@ create table project_files (
   created_at timestamptz default now()
 );
 
-create table line_items (
+create table if not exists line_items (
   id uuid primary key default uuid_generate_v4(),
   project_id uuid references projects(id) on delete cascade not null,
   trade text not null,
@@ -48,7 +53,7 @@ create table line_items (
   updated_at timestamptz default now()
 );
 
-create table chat_messages (
+create table if not exists chat_messages (
   id uuid primary key default uuid_generate_v4(),
   project_id uuid references projects(id) on delete cascade not null,
   role text not null check (role in ('user', 'assistant', 'system')),
@@ -57,7 +62,7 @@ create table chat_messages (
   created_at timestamptz default now()
 );
 
-create table cost_profiles (
+create table if not exists cost_profiles (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references auth.users(id) on delete cascade not null,
   name text not null,
@@ -67,32 +72,77 @@ create table cost_profiles (
   updated_at timestamptz default now()
 );
 
--- Indexes
-create index idx_projects_user_id on projects(user_id);
-create index idx_projects_status on projects(status);
-create index idx_line_items_project_id on line_items(project_id);
-create index idx_line_items_trade on line_items(trade);
-create index idx_chat_messages_project_id on chat_messages(project_id);
-create index idx_cost_profiles_user_id on cost_profiles(user_id);
+-- ============================================
+-- INDEXES
+-- ============================================
 
--- RLS
+create index if not exists idx_projects_user_id on projects(user_id);
+create index if not exists idx_projects_status on projects(status);
+create index if not exists idx_line_items_project_id on line_items(project_id);
+create index if not exists idx_line_items_trade on line_items(trade);
+create index if not exists idx_chat_messages_project_id on chat_messages(project_id);
+create index if not exists idx_cost_profiles_user_id on cost_profiles(user_id);
+
+-- ============================================
+-- ROW LEVEL SECURITY
+-- ============================================
+
 alter table projects enable row level security;
 alter table project_files enable row level security;
 alter table line_items enable row level security;
 alter table chat_messages enable row level security;
 alter table cost_profiles enable row level security;
 
-create policy "Users see own projects" on projects for all using (auth.uid() = user_id);
-create policy "Users see own project files" on project_files for all using (project_id in (select id from projects where user_id = auth.uid()));
-create policy "Users see own line items" on line_items for all using (project_id in (select id from projects where user_id = auth.uid()));
-create policy "Users see own chat messages" on chat_messages for all using (project_id in (select id from projects where user_id = auth.uid()));
-create policy "Users see own cost profiles" on cost_profiles for all using (auth.uid() = user_id);
+-- Projects: users can only access their own
+create policy "Users select own projects" on projects for select using (auth.uid() = user_id);
+create policy "Users insert own projects" on projects for insert with check (auth.uid() = user_id);
+create policy "Users update own projects" on projects for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users delete own projects" on projects for delete using (auth.uid() = user_id);
 
--- Updated_at trigger
-create or replace function update_updated_at() returns trigger as $$
-begin new.updated_at = now(); return new; end;
+-- Project files: users can only access files in their own projects
+create policy "Users select own project files" on project_files for select using (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users insert own project files" on project_files for insert with check (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users update own project files" on project_files for update using (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users delete own project files" on project_files for delete using (project_id in (select id from projects where user_id = auth.uid()));
+
+-- Line items: users can only access line items in their own projects
+create policy "Users select own line items" on line_items for select using (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users insert own line items" on line_items for insert with check (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users update own line items" on line_items for update using (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users delete own line items" on line_items for delete using (project_id in (select id from projects where user_id = auth.uid()));
+
+-- Chat messages: users can only access messages in their own projects
+create policy "Users select own chat messages" on chat_messages for select using (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users insert own chat messages" on chat_messages for insert with check (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users update own chat messages" on chat_messages for update using (project_id in (select id from projects where user_id = auth.uid()));
+create policy "Users delete own chat messages" on chat_messages for delete using (project_id in (select id from projects where user_id = auth.uid()));
+
+-- Cost profiles: users can only access their own
+create policy "Users select own cost profiles" on cost_profiles for select using (auth.uid() = user_id);
+create policy "Users insert own cost profiles" on cost_profiles for insert with check (auth.uid() = user_id);
+create policy "Users update own cost profiles" on cost_profiles for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users delete own cost profiles" on cost_profiles for delete using (auth.uid() = user_id);
+
+-- ============================================
+-- UPDATED_AT TRIGGER
+-- ============================================
+
+create or replace function update_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
 $$ language plpgsql;
 
-create trigger projects_updated_at before update on projects for each row execute function update_updated_at();
-create trigger line_items_updated_at before update on line_items for each row execute function update_updated_at();
-create trigger cost_profiles_updated_at before update on cost_profiles for each row execute function update_updated_at();
+create trigger projects_updated_at
+  before update on projects
+  for each row execute function update_updated_at();
+
+create trigger line_items_updated_at
+  before update on line_items
+  for each row execute function update_updated_at();
+
+create trigger cost_profiles_updated_at
+  before update on cost_profiles
+  for each row execute function update_updated_at();

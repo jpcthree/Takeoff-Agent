@@ -1,29 +1,33 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { MessageSquare, PanelRightClose, PanelRightOpen, Trash2 } from 'lucide-react';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { useChat } from '@/hooks/useChat';
+import { useProjectStore } from '@/hooks/useProjectStore';
 
-interface ChatPanelProps {
-  projectName?: string;
-  projectAddress?: string;
-  buildingModel?: Record<string, unknown>;
-  lineItemsSummary?: string;
-}
+function ChatPanel() {
+  const { state } = useProjectStore();
+  const { projectMeta, buildingModel, lineItems } = state;
 
-function ChatPanel({
-  projectName,
-  projectAddress,
-  buildingModel,
-  lineItemsSummary,
-}: ChatPanelProps) {
+  // Build a summary of line items by trade for the chat context
+  const lineItemsSummary = useMemo(() => {
+    if (lineItems.length === 0) return '';
+    const byTrade: Record<string, number> = {};
+    for (const item of lineItems) {
+      byTrade[item.trade] = (byTrade[item.trade] || 0) + 1;
+    }
+    return Object.entries(byTrade)
+      .map(([trade, count]) => `${trade}: ${count} items`)
+      .join('. ');
+  }, [lineItems]);
+
   const { messages, isStreaming, sendMessage, clearMessages } = useChat({
-    projectName,
-    projectAddress,
-    buildingModel,
-    lineItemsSummary,
+    projectName: projectMeta.name,
+    projectAddress: projectMeta.address,
+    buildingModel: buildingModel || undefined,
+    lineItemsSummary: lineItemsSummary || undefined,
   });
 
   const [collapsed, setCollapsed] = React.useState(false);
@@ -101,4 +105,3 @@ function ChatPanel({
 }
 
 export { ChatPanel };
-export type { ChatPanelProps };

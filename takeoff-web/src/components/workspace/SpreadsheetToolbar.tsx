@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Plus, Download, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Plus, Download, ChevronsDownUp, ChevronsUpDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { useProjectStore } from '@/hooks/useProjectStore';
+import { exportXlsx } from '@/lib/api/python-service';
 
 interface SpreadsheetToolbarProps {
   trades: string[];
@@ -20,6 +22,24 @@ function SpreadsheetToolbar({
   onCollapseAll,
 }: SpreadsheetToolbarProps) {
   const [showFilter, setShowFilter] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const { state } = useProjectStore();
+
+  const handleExport = useCallback(async () => {
+    if (state.rawLineItems.length === 0) return;
+    setIsExporting(true);
+    try {
+      await exportXlsx(
+        state.rawLineItems,
+        state.projectMeta.name || 'Estimate',
+        state.projectMeta.address
+      );
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [state.rawLineItems, state.projectMeta]);
 
   const toggleTrade = (trade: string) => {
     const current = visibleTrades ?? new Set(trades);
@@ -29,7 +49,6 @@ function SpreadsheetToolbar({
     } else {
       next.add(trade);
     }
-    // If all are visible again, reset to null (show all)
     if (next.size === trades.length) {
       onVisibleTradesChange(null);
     } else {
@@ -40,19 +59,25 @@ function SpreadsheetToolbar({
   return (
     <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 shrink-0">
       <Button size="sm" variant="secondary" icon={<Plus className="h-3.5 w-3.5" />}>
-        Add Line Item
+        Add Item
       </Button>
-      <Button size="sm" variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
+      <Button
+        size="sm"
+        variant="secondary"
+        icon={isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        onClick={handleExport}
+        disabled={state.rawLineItems.length === 0 || isExporting}
+      >
         Export .xlsx
       </Button>
 
       <div className="w-px h-5 bg-gray-300 mx-1" />
 
       <Button size="sm" variant="ghost" onClick={onExpandAll} icon={<ChevronsUpDown className="h-3.5 w-3.5" />}>
-        Expand All
+        Expand
       </Button>
       <Button size="sm" variant="ghost" onClick={onCollapseAll} icon={<ChevronsDownUp className="h-3.5 w-3.5" />}>
-        Collapse All
+        Collapse
       </Button>
 
       <div className="w-px h-5 bg-gray-300 mx-1" />
@@ -64,7 +89,7 @@ function SpreadsheetToolbar({
           variant="ghost"
           onClick={() => setShowFilter(!showFilter)}
         >
-          Filter Trades
+          Filter
           {visibleTrades && (
             <span className="ml-1 text-xs bg-primary/10 text-primary px-1.5 rounded-full">
               {visibleTrades.size}/{trades.length}
@@ -75,9 +100,7 @@ function SpreadsheetToolbar({
         {showFilter && (
           <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-lg border border-gray-200 shadow-lg py-2 min-w-[180px]">
             {trades.map((trade) => {
-              const isChecked = visibleTrades
-                ? visibleTrades.has(trade)
-                : true;
+              const isChecked = visibleTrades ? visibleTrades.has(trade) : true;
               return (
                 <label
                   key={trade}
