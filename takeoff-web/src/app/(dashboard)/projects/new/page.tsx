@@ -8,11 +8,31 @@ import {
   type ProjectFormData,
 } from '@/components/projects/CreateProjectWizard';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { storePdfFiles } from '@/lib/utils/pdf-store';
 
 export default function NewProjectPage() {
   const router = useRouter();
 
+  /** Save project meta + files, then navigate to workspace */
   const handleComplete = async (data: ProjectFormData) => {
+    // Helper to store files & meta locally and navigate
+    const goLocal = async (id: string) => {
+      sessionStorage.setItem(
+        `project-meta-${id}`,
+        JSON.stringify({
+          name: data.name,
+          address: data.address,
+          clientName: data.clientName,
+          buildingType: data.buildingType,
+        })
+      );
+      // Store PDF files in IndexedDB so workspace can pick them up
+      if (data.files.length > 0) {
+        await storePdfFiles(id, data.files);
+      }
+      router.push(`/project/${id}`);
+    };
+
     try {
       // If Supabase is configured, persist to DB
       if (isSupabaseConfigured()) {
@@ -36,37 +56,23 @@ export default function NewProjectPage() {
             .single();
 
           if (error) throw error;
+
+          // Store PDFs in IndexedDB for the workspace to load
+          if (data.files.length > 0) {
+            await storePdfFiles(project.id, data.files);
+          }
           router.push(`/project/${project.id}`);
           return;
         }
       }
 
-      // No auth / no Supabase — use a local project ID and store meta in sessionStorage
+      // No auth / no Supabase — use a local project ID
       const localId = `local-${Date.now().toString(36)}`;
-      sessionStorage.setItem(
-        `project-meta-${localId}`,
-        JSON.stringify({
-          name: data.name,
-          address: data.address,
-          clientName: data.clientName,
-          buildingType: data.buildingType,
-        })
-      );
-      router.push(`/project/${localId}`);
+      await goLocal(localId);
     } catch (err) {
       console.error('Failed to create project:', err);
-      // Fallback to local project on any error
       const localId = `local-${Date.now().toString(36)}`;
-      sessionStorage.setItem(
-        `project-meta-${localId}`,
-        JSON.stringify({
-          name: data.name,
-          address: data.address,
-          clientName: data.clientName,
-          buildingType: data.buildingType,
-        })
-      );
-      router.push(`/project/${localId}`);
+      await goLocal(localId);
     }
   };
 

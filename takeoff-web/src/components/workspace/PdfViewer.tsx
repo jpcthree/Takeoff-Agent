@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import {
   ChevronLeft,
   ChevronRight,
@@ -18,9 +19,13 @@ import {
 } from 'lucide-react';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useAnalysisPipeline } from '@/hooks/useAnalysisPipeline';
-import { convertPdf } from '@/lib/api/python-service';
+import { convertPdfClientSide } from '@/lib/utils/pdf-to-images';
+import { getPdfFiles, clearPdfFiles } from '@/lib/utils/pdf-store';
 
 function PdfViewer() {
+  const params = useParams();
+  const projectId = params?.id as string;
+
   const { state, setPdfFile, setPdfPages, setStatus, setError } = useProjectStore();
   const { pdfPages, analysisStatus, buildingModel, analysisMessages, error } = state;
   const {
@@ -35,6 +40,7 @@ function PdfViewer() {
   const [zoom, setZoom] = useState(100);
   const [isConverting, setIsConverting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [autoLoaded, setAutoLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -42,6 +48,38 @@ function PdfViewer() {
   const hasPlan = totalPages > 0;
   const currentPageData = hasPlan ? pdfPages[currentPage - 1] : null;
   const isBusy = isAnalyzing || isCalculating || isConverting;
+
+  // Auto-load PDF files from IndexedDB (uploaded during wizard)
+  useEffect(() => {
+    if (autoLoaded || hasPlan || !projectId) return;
+    setAutoLoaded(true);
+
+    (async () => {
+      try {
+        const files = await getPdfFiles(projectId);
+        if (files.length > 0) {
+          // Convert the first PDF file
+          const file = files[0];
+          setPdfFile(file);
+          setIsConverting(true);
+          setStatus('converting');
+
+          const result = await convertPdfClientSide(file, 150);
+          setPdfPages(result.pages);
+          setCurrentPage(1);
+          setStatus('idle');
+          setIsConverting(false);
+
+          // Clean up IndexedDB after loading
+          await clearPdfFiles(projectId);
+        }
+      } catch (err) {
+        console.error('Failed to auto-load PDF:', err);
+        setIsConverting(false);
+        setStatus('idle');
+      }
+    })();
+  }, [projectId, autoLoaded, hasPlan, setPdfFile, setPdfPages, setStatus]);
 
   // Elapsed timer while analyzing/calculating
   useEffect(() => {
@@ -71,13 +109,14 @@ function PdfViewer() {
       setStatus('converting');
 
       try {
-        const result = await convertPdf(file, 150);
+        // Use client-side conversion (no Python API needed)
+        const result = await convertPdfClientSide(file, 150);
         setPdfPages(result.pages);
         setCurrentPage(1);
         setStatus('idle');
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : 'Failed to convert PDF. Is the Python API running?'
+          err instanceof Error ? err.message : 'Failed to convert PDF'
         );
         setStatus('idle');
       } finally {
