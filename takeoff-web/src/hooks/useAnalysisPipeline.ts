@@ -4,6 +4,7 @@ import { useCallback, useRef } from 'react';
 import { useProjectStore } from './useProjectStore';
 import { calculateAll } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
+import { createAnalysisPages } from '@/lib/utils/pdf-to-images';
 import type { PdfPage } from '@/lib/api/python-service';
 
 /**
@@ -56,6 +57,27 @@ export function useAnalysisPipeline() {
       addAnalysisMessage(`Analyzing ${pages.length} blueprint page(s)...`);
 
       try {
+        // If we have the original PDF file, create compressed JPEG analysis pages
+        // (much smaller than the full-res PNG display pages)
+        let analysisPages: { data: string; mime_type: string; page_number: number }[];
+
+        if (state.pdfFile) {
+          addAnalysisMessage('Compressing pages for analysis...');
+          const compressed = await createAnalysisPages(state.pdfFile, 100);
+          analysisPages = compressed.map((p) => ({
+            data: p.data,
+            mime_type: p.mime_type,
+            page_number: p.page_number,
+          }));
+        } else {
+          // Fallback: use the display pages as-is
+          analysisPages = pages.map((p) => ({
+            data: p.data,
+            mime_type: p.mime_type,
+            page_number: p.page_number,
+          }));
+        }
+
         // Client-side timeout: 3 minutes max for vision analysis
         const timeoutId = setTimeout(() => controller.abort(), 180_000);
 
@@ -63,11 +85,7 @@ export function useAnalysisPipeline() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            pages: pages.map((p) => ({
-              data: p.data,
-              mime_type: p.mime_type,
-              page_number: p.page_number,
-            })),
+            pages: analysisPages,
             projectMeta,
           }),
           signal: controller.signal,
