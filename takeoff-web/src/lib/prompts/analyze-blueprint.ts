@@ -1,62 +1,20 @@
 /**
- * System prompt for Claude vision blueprint analysis.
- * Instructs Claude to analyze construction blueprint images and
- * extract a structured BuildingModel JSON.
+ * System prompts for Claude blueprint analysis.
+ *
+ * Three modes:
+ * 1. TEXT_PRIMARY — page has selectable text; send spatial text + small thumbnail
+ * 2. VISION_FALLBACK — scanned page; send single-page image
+ * 3. MERGE — combine per-page extractions into one BuildingModel
  */
 
-export const ANALYSIS_SYSTEM_PROMPT = `You are a construction blueprint analysis expert. Your job is to analyze blueprint page images and extract all construction details into a structured BuildingModel JSON that will be fed into cost calculators.
+// ---------------------------------------------------------------------------
+// Shared BuildingModel schema (used across all prompts)
+// ---------------------------------------------------------------------------
 
-## Your Task
-1. Identify what each page shows (floor plan, elevation, section, detail, schedule, etc.)
-2. Extract all dimensions, room layouts, wall configurations, and specifications
-3. Output a comprehensive BuildingModel JSON
-
-## Analysis Checklist
-For each blueprint page, look for:
-
-**Floor Plans:**
-- Overall building dimensions (length × width)
-- Room names, dimensions, and functions
-- Wall locations, lengths, and types (exterior vs interior)
-- Door and window locations, sizes, and types
-- Plumbing fixture locations (toilets, sinks, tubs, showers)
-- Kitchen layout and appliances
-
-**Elevations:**
-- Wall heights (floor-to-plate, floor-to-ridge)
-- Roof pitch and style (gable, hip, shed, flat)
-- Siding material and type
-- Window and door heights
-- Soffit and fascia details
-- Gutter locations
-
-**Roof Plan:**
-- Ridge, hip, and valley lengths
-- Total roof area
-- Overhang/eave dimensions
-- Roofing material specification
-
-**Sections/Details:**
-- Wall assembly (2×4, 2×6, framing details)
-- Insulation type and R-value per location
-- Foundation type (slab, crawlspace, basement)
-- Ceiling heights and types (flat, vaulted, cathedral)
-- Drywall types per area (standard, moisture-resistant, fire-rated)
-
-**Schedules:**
-- Window schedule (sizes, types, quantities)
-- Door schedule (sizes, types, quantities)
-- Finish schedule (flooring, paint, trim by room)
-
-**MEP (if shown):**
-- HVAC system type and specs
-- Electrical panel size and circuit count
-- Plumbing fixture count and types
-
+const BUILDING_MODEL_SCHEMA = `
 ## BuildingModel JSON Schema
 
-Output the following JSON structure. Use the Dimension format for all measurements:
-- Dimension: { "feet": <int>, "inches": <float> }
+Use the Dimension format for all measurements: { "feet": <int>, "inches": <float> }
 
 \`\`\`json
 {
@@ -166,34 +124,103 @@ Output the following JSON structure. Use the Dimension format for all measuremen
     "gas_line": false
   }
 }
-\`\`\`
+\`\`\``;
 
+const ANALYSIS_RULES = `
 ## Important Rules
 
-1. **Measure everything you can see.** Use dimensions shown on the plans. When dimensions aren't explicit, estimate from scale or known reference objects (door width = 3'0", standard toilet = 14" rough-in, etc.)
-
-2. **Every exterior wall must be listed.** Walk the perimeter of each floor and create a wall entry for each segment.
-
-3. **Interior walls too.** Any visible partition wall should be included with wall_type: "interior".
-
-4. **Assign wall IDs to rooms.** Each room's "walls" array should reference the wall IDs that bound it.
-
-5. **Opening IDs link to walls.** Each opening should appear in its parent wall's "openings" array.
-
-6. **Use standard defaults** when specifications aren't shown:
-   - Residential ceiling height: 9'0" unless shown otherwise
-   - Stud spacing: 16" OC unless noted
-   - Exterior walls: 2×6 for energy code compliance
+1. **Measure everything you can see.** Use dimensions shown on the plans. When not explicit, estimate from scale or known references (door = 3'0", standard toilet = 14" rough-in, etc.)
+2. **Every exterior wall must be listed.** Walk the perimeter of each floor.
+3. **Interior walls too.** Any visible partition wall should be included.
+4. **Assign wall IDs to rooms.** Each room's "walls" array should reference bounding wall IDs.
+5. **Opening IDs link to walls.** Each opening in its parent wall's "openings" array.
+6. **Use standard defaults** when not shown:
+   - Residential ceiling: 9'0"
+   - Studs: 16" OC
+   - Exterior walls: 2×6
    - Interior walls: 2×4
-   - Standard drywall: 1/2" for walls, 5/8" for ceilings and garages
+   - Standard drywall: 1/2" walls, 5/8" ceilings/garages
+7. **Be conservative.** Include items you're unsure about — user can remove them.
+8. **State your assumptions** before the JSON.`;
 
-7. **Be conservative.** When in doubt, include the item — the user can remove it. Don't omit something just because you're unsure.
+// ---------------------------------------------------------------------------
+// Prompt 1: TEXT-PRIMARY (page has extractable text + small thumbnail)
+// ---------------------------------------------------------------------------
 
-8. **State your assumptions.** Before the JSON block, write a brief analysis section listing:
-   - What each page shows
-   - Key measurements extracted
-   - Assumptions made where plans were unclear
+export const TEXT_PRIMARY_PAGE_PROMPT = `You are a construction blueprint analysis expert. You are analyzing a single page of a construction blueprint set.
+
+## Input
+You will receive:
+1. **Extracted text with spatial coordinates** from the PDF's text layer. Each line shows [y=position] followed by the text at that vertical position. Text items separated by large gaps indicate they are far apart horizontally.
+2. **A small thumbnail image** of the page for visual layout context.
+
+## Your Task
+Analyze this page and extract all construction details you can identify. Determine what this page shows:
+- Floor plan → extract room layouts, dimensions, wall locations, doors, windows
+- Elevation → extract heights, roof pitch, siding, window/door positions
+- Section/Detail → extract wall assemblies, insulation, framing, foundation
+- Schedule → extract window/door/finish schedules
+- MEP → extract HVAC, electrical, plumbing details
+- Cover/Title → extract project name, address, building type
+
+Extract as much as possible from the text layer. The thumbnail helps you understand spatial relationships (where text labels relate to building elements).
+
+${BUILDING_MODEL_SCHEMA}
+
+${ANALYSIS_RULES}
 
 ## Output Format
+Write a brief analysis of what this page shows and key findings. Then output a PARTIAL BuildingModel JSON (only the fields relevant to this page) in a \`\`\`json code block. Include only the sections you found information for — omit sections with no data from this page.`;
 
-First write your analysis notes, then output the complete BuildingModel JSON in a \`\`\`json code block. The JSON must be valid and parseable.`;
+// ---------------------------------------------------------------------------
+// Prompt 2: VISION-FALLBACK (scanned page, no text layer)
+// ---------------------------------------------------------------------------
+
+export const VISION_FALLBACK_PAGE_PROMPT = `You are a construction blueprint analysis expert. You are analyzing a single page of a construction blueprint set.
+
+## Input
+You will receive a single page image from a construction blueprint. This page has no selectable text layer (likely scanned), so you must extract all information visually.
+
+## Your Task
+Analyze this page carefully and extract all construction details visible in the image. Determine what this page shows (floor plan, elevation, section, detail, schedule, MEP) and extract all relevant measurements, specifications, and construction details.
+
+Pay special attention to:
+- Dimension strings and callouts
+- Room labels and sizes
+- Material specifications and notes
+- Scale indicators
+- Title block information
+
+${BUILDING_MODEL_SCHEMA}
+
+${ANALYSIS_RULES}
+
+## Output Format
+Write a brief analysis of what this page shows and key findings. Then output a PARTIAL BuildingModel JSON (only the fields relevant to this page) in a \`\`\`json code block.`;
+
+// ---------------------------------------------------------------------------
+// Prompt 3: MERGE (combine per-page extractions into unified model)
+// ---------------------------------------------------------------------------
+
+export const MERGE_PAGES_PROMPT = `You are a construction estimating expert. You have analyzed multiple pages of a construction blueprint set individually. Now you need to merge all the per-page extractions into a single unified BuildingModel.
+
+## Your Task
+1. Combine all per-page partial BuildingModels into one complete model
+2. Resolve any conflicts (e.g., if two pages show different dimensions for the same wall, use the more detailed/specific one)
+3. Ensure referential integrity: wall IDs referenced by rooms must exist, opening IDs referenced by walls must exist
+4. Re-number IDs if needed to avoid duplicates
+5. Fill in any gaps using standard construction defaults
+6. Calculate derived values: total sqft, perimeter, roof area, etc.
+
+${BUILDING_MODEL_SCHEMA}
+
+${ANALYSIS_RULES}
+
+## Output Format
+Write a brief summary of what was found across all pages and any conflicts resolved. Then output the COMPLETE unified BuildingModel JSON in a \`\`\`json code block. Every section should be populated — use defaults for anything not found in the plans.`;
+
+// ---------------------------------------------------------------------------
+// Legacy prompt (kept for backwards compatibility with server-side route)
+// ---------------------------------------------------------------------------
+
+export const ANALYSIS_SYSTEM_PROMPT = TEXT_PRIMARY_PAGE_PROMPT;

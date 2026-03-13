@@ -4,14 +4,14 @@ import { useCallback, useRef } from 'react';
 import { useProjectStore } from './useProjectStore';
 import { calculateAll } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
-import { createAnalysisPages } from '@/lib/utils/pdf-to-images';
-import type { PdfPage } from '@/lib/api/python-service';
+import { analyzeBlueprint, type AnalysisProgress } from '@/lib/services/blueprint-analyzer';
 
 /**
  * Hook that orchestrates the full analysis pipeline:
- * PDF pages → Claude vision analysis → calculator execution → spreadsheet population
+ * PDF file → text extraction → per-page Claude analysis → merge → calculators → spreadsheet
  *
- * Includes proper timeouts, cancellation, and progress feedback.
+ * Claude calls run directly from the browser (no Vercel function involved)
+ * to avoid body size and timeout limits.
  */
 export function useAnalysisPipeline() {
   const {
@@ -26,9 +26,7 @@ export function useAnalysisPipeline() {
 
   const abortRef = useRef<AbortController | null>(null);
 
-  /**
-   * Cancel any in-progress pipeline operation.
-   */
+  /** Cancel any in-progress pipeline operation. */
   const cancel = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
@@ -39,14 +37,31 @@ export function useAnalysisPipeline() {
   }, [setStatus, addAnalysisMessage]);
 
   /**
-   * Run Claude vision analysis on PDF pages.
-   * Streams progress and extracts BuildingModel.
+   * Fetch the Anthropic API key from the server.
+   * Falls back to null if not configured.
+   */
+  const fetchApiKey = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/auth/claude-key');
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.key || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /**
+   * Run blueprint analysis directly from the browser.
+   * Uses text extraction + per-page Claude calls.
    */
   const analyzeBlueprints = useCallback(
-    async (
-      pages: PdfPage[],
-      projectMeta?: { name?: string; address?: string; buildingType?: string }
-    ) => {
+    async (projectMeta?: { name?: string; address?: string; buildingType?: string }) => {
+      if (!state.pdfFile) {
+        setError('No PDF file loaded. Upload a PDF first.');
+        return null;
+      }
+
       // Cancel any previous run
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
@@ -54,114 +69,47 @@ export function useAnalysisPipeline() {
 
       setStatus('analyzing');
       dispatch({ type: 'CLEAR_ANALYSIS_MESSAGES' });
-      addAnalysisMessage(`Analyzing ${pages.length} blueprint page(s)...`);
+      addAnalysisMessage('Starting blueprint analysis...');
 
       try {
-        // If we have the original PDF file, create compressed JPEG analysis pages
-        // (much smaller than the full-res PNG display pages)
-        let analysisPages: { data: string; mime_type: string; page_number: number }[];
-
-        if (state.pdfFile) {
-          addAnalysisMessage('Compressing pages for analysis...');
-          const compressed = await createAnalysisPages(state.pdfFile, 100);
-          analysisPages = compressed.map((p) => ({
-            data: p.data,
-            mime_type: p.mime_type,
-            page_number: p.page_number,
-          }));
-        } else {
-          // Fallback: use the display pages as-is
-          analysisPages = pages.map((p) => ({
-            data: p.data,
-            mime_type: p.mime_type,
-            page_number: p.page_number,
-          }));
+        // Get API key
+        const apiKey = await fetchApiKey();
+        if (!apiKey) {
+          // Fall back to mock
+          addAnalysisMessage('No API key configured — using demo mode');
+          const mockModel = createMockModel(projectMeta);
+          setBuildingModel(mockModel);
+          addAnalysisMessage('✓ Demo building model loaded');
+          return mockModel;
         }
 
-        // Client-side timeout: 3 minutes max for vision analysis
-        const timeoutId = setTimeout(() => controller.abort(), 180_000);
+        if (controller.signal.aborted) return null;
 
-        const res = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pages: analysisPages,
-            projectMeta,
-          }),
-          signal: controller.signal,
-        });
+        // Run the client-side analysis
+        const onProgress = (progress: AnalysisProgress) => {
+          addAnalysisMessage(progress.message);
+        };
 
-        clearTimeout(timeoutId);
-
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(errBody.error || `Analysis failed: ${res.status}`);
-        }
-
-        const reader = res.body?.getReader();
-        if (!reader) throw new Error('No response body');
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let buildingModel: Record<string, unknown> | null = null;
-        let charCount = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
-
-            try {
-              const event = JSON.parse(jsonStr);
-
-              if (event.type === 'text') {
-                charCount += event.text.length;
-                // Show progress updates at key points
-                if (event.text.includes('##') || event.text.includes('**Page') || event.text.includes('**Key')) {
-                  const cleanText = event.text.replace(/[#*]/g, '').trim();
-                  if (cleanText.length > 3) {
-                    addAnalysisMessage(cleanText);
-                  }
-                }
-                // Also show periodic progress
-                if (charCount % 2000 < 50) {
-                  addAnalysisMessage('Claude is analyzing blueprints...');
-                }
-              } else if (event.type === 'building_model' && event.model) {
-                buildingModel = event.model;
-                addAnalysisMessage('✓ Building model extracted successfully');
-              } else if (event.type === 'error') {
-                throw new Error(event.error);
-              } else if (event.type === 'done') {
-                // Stream complete
-              }
-            } catch (e) {
-              if (e instanceof SyntaxError) continue; // Ignore malformed JSON chunks
-              throw e;
-            }
-          }
-        }
+        const buildingModel = await analyzeBlueprint(
+          state.pdfFile,
+          projectMeta || {},
+          apiKey,
+          onProgress,
+          controller.signal
+        );
 
         if (buildingModel) {
           setBuildingModel(buildingModel);
-          addAnalysisMessage('✓ Ready to run calculators');
+          addAnalysisMessage('✓ Building model extracted — ready to calculate');
           return buildingModel;
         } else {
           throw new Error(
-            'No building model extracted from analysis. Claude may not have recognized the blueprint format.'
+            'No building model extracted. The blueprint may not contain recognizable construction details.'
           );
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
-          addAnalysisMessage('Analysis cancelled or timed out');
+          addAnalysisMessage('Analysis cancelled');
           setStatus('idle');
           return null;
         }
@@ -175,11 +123,12 @@ export function useAnalysisPipeline() {
         }
       }
     },
-    [setBuildingModel, setStatus, setError, addAnalysisMessage, dispatch]
+    [state.pdfFile, setBuildingModel, setStatus, setError, addAnalysisMessage, dispatch, fetchApiKey]
   );
 
   /**
    * Run all 9 trade calculators against the current building model.
+   * Calls the Python API on Railway (small JSON payload, fast).
    */
   const runCalculators = useCallback(
     async (model?: Record<string, unknown>) => {
@@ -237,10 +186,10 @@ export function useAnalysisPipeline() {
    */
   const runFullPipeline = useCallback(
     async (
-      pages: PdfPage[],
+      _pages?: unknown, // Kept for API compatibility but no longer used (we use state.pdfFile)
       projectMeta?: { name?: string; address?: string; buildingType?: string }
     ) => {
-      const model = await analyzeBlueprints(pages, projectMeta);
+      const model = await analyzeBlueprints(projectMeta);
       if (model) {
         await runCalculators(model);
       }
@@ -257,5 +206,41 @@ export function useAnalysisPipeline() {
     isCalculating: state.analysisStatus === 'calculating',
     isReady: state.analysisStatus === 'ready',
     analysisMessages: state.analysisMessages,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Mock model for demo/dev mode (no API key)
+// ---------------------------------------------------------------------------
+
+function createMockModel(
+  meta?: { name?: string; address?: string; buildingType?: string }
+): Record<string, unknown> {
+  return {
+    project_name: meta?.name || 'Demo ADU',
+    project_address: meta?.address || '123 Main Street',
+    building_type: meta?.buildingType || 'residential',
+    stories: 1,
+    sqft: 520,
+    walls: [
+      { id: 'w1', floor: 1, wall_type: 'exterior', length: { feet: 26, inches: 0 }, height: { feet: 9, inches: 0 }, thickness: '2x6', is_exterior: true, stud_spacing: 16, insulation_type: 'closed_cell_spray', insulation_r_value: 30, drywall_type: 'standard_1_2', openings: ['o1'] },
+      { id: 'w2', floor: 1, wall_type: 'exterior', length: { feet: 20, inches: 0 }, height: { feet: 9, inches: 0 }, thickness: '2x6', is_exterior: true, stud_spacing: 16, insulation_type: 'closed_cell_spray', insulation_r_value: 30, drywall_type: 'standard_1_2', openings: ['o2'] },
+      { id: 'w3', floor: 1, wall_type: 'exterior', length: { feet: 26, inches: 0 }, height: { feet: 9, inches: 0 }, thickness: '2x6', is_exterior: true, stud_spacing: 16, insulation_type: 'closed_cell_spray', insulation_r_value: 30, drywall_type: 'standard_1_2', openings: ['o3'] },
+      { id: 'w4', floor: 1, wall_type: 'exterior', length: { feet: 20, inches: 0 }, height: { feet: 9, inches: 0 }, thickness: '2x6', is_exterior: true, stud_spacing: 16, insulation_type: 'closed_cell_spray', insulation_r_value: 30, drywall_type: 'standard_1_2', openings: [] },
+    ],
+    rooms: [
+      { id: 'r1', floor: 1, name: 'Living Room', length: { feet: 14, inches: 0 }, width: { feet: 12, inches: 0 }, height: { feet: 9, inches: 0 }, floor_finish: 'vinyl_plank' },
+      { id: 'r2', floor: 1, name: 'Bedroom', length: { feet: 12, inches: 0 }, width: { feet: 10, inches: 0 }, height: { feet: 9, inches: 0 }, floor_finish: 'vinyl_plank' },
+      { id: 'r3', floor: 1, name: 'Kitchen', length: { feet: 10, inches: 0 }, width: { feet: 8, inches: 0 }, height: { feet: 9, inches: 0 }, is_kitchen: true, floor_finish: 'vinyl_plank' },
+      { id: 'r4', floor: 1, name: 'Bathroom', length: { feet: 8, inches: 0 }, width: { feet: 6, inches: 0 }, height: { feet: 9, inches: 0 }, is_bathroom: true, floor_finish: 'tile' },
+    ],
+    openings: [
+      { id: 'o1', opening_type: 'window', width: { feet: 3, inches: 0 }, height: { feet: 5, inches: 0 }, quantity: 2 },
+      { id: 'o2', opening_type: 'door', width: { feet: 3, inches: 0 }, height: { feet: 6, inches: 8 }, quantity: 1 },
+      { id: 'o3', opening_type: 'window', width: { feet: 4, inches: 0 }, height: { feet: 3, inches: 0 }, quantity: 1 },
+    ],
+    roof: { style: 'gable', material: 'architectural_shingle', pitch: 5, total_area_sf: 650, ridge_length: { feet: 26, inches: 0 }, eave_length: { feet: 52, inches: 0 } },
+    foundation: { type: 'slab', perimeter_lf: 92, area_sf: 520 },
+    siding_type: 'fiber_cement',
   };
 }

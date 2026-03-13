@@ -122,3 +122,42 @@ export async function createAnalysisPages(
 
   return pages;
 }
+
+/**
+ * Create tiny JPEG thumbnails for visual layout context.
+ * Used alongside extracted text to give Claude spatial reference.
+ * ~50-100KB each at 50 DPI, quality 0.5.
+ */
+export async function createThumbnails(
+  file: File,
+  dpi: number = 50,
+  quality: number = 0.5
+): Promise<PdfPage[]> {
+  return createAnalysisPages(file, dpi);
+}
+
+/**
+ * Create a single-page vision image for scanned/raster PDFs (no text layer).
+ * 100 DPI JPEG, one page only — stays well under API limits.
+ */
+export async function createVisionPage(
+  file: File,
+  pageNumber: number,
+  dpi: number = 100,
+  quality: number = 0.75
+): Promise<PdfPage> {
+  const pdfjs = await getPdfLib();
+  const arrayBuffer = await file.arrayBuffer();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdf = await (pdfjs as any).getDocument({ data: arrayBuffer }).promise;
+  const scale = dpi / 72;
+
+  const { data, mime_type } = await renderPage(pdf, pageNumber, scale, 'image/jpeg', quality);
+
+  return {
+    page_number: pageNumber,
+    data,
+    mime_type,
+    filename: `${file.name}_page_${pageNumber}.jpg`,
+  };
+}
