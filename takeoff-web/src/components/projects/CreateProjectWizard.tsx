@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FileUploadZone } from './FileUploadZone';
@@ -9,8 +9,6 @@ import { FileUploadZone } from './FileUploadZone';
 const STEPS = [
   { label: 'Project Details' },
   { label: 'Upload Plans' },
-  { label: 'AI Analysis' },
-  { label: 'Review' },
 ];
 
 export interface ProjectFormData {
@@ -39,7 +37,6 @@ function StepIndicator({
         const isCurrent = idx === currentStep;
         return (
           <React.Fragment key={idx}>
-            {/* Step circle */}
             <div className="flex flex-col items-center">
               <div
                 className={[
@@ -62,8 +59,6 @@ function StepIndicator({
                 {step.label}
               </span>
             </div>
-
-            {/* Connector line */}
             {idx < steps.length - 1 && (
               <div
                 className={[
@@ -81,6 +76,7 @@ function StepIndicator({
 
 function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
   const [step, setStep] = useState(0);
+  const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState<ProjectFormData>({
     name: '',
     address: '',
@@ -98,15 +94,19 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
 
   const canAdvance = () => {
     if (step === 0) return formData.name.trim().length > 0;
-    if (step === 1) return formData.files.length > 0;
     return true;
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step < STEPS.length - 1) {
       setStep((s) => s + 1);
     } else {
-      onComplete?.(formData);
+      setIsCreating(true);
+      try {
+        await onComplete?.(formData);
+      } finally {
+        setIsCreating(false);
+      }
     }
   };
 
@@ -118,7 +118,6 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
     <div className="max-w-2xl mx-auto">
       <StepIndicator steps={STEPS} currentStep={step} />
 
-      {/* Step content */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
         {step === 0 && (
           <div className="space-y-5">
@@ -164,43 +163,23 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
 
         {step === 1 && (
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
               Upload Plans
             </h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Upload your blueprint PDFs. You can also upload or re-upload plans later in the project workspace.
+            </p>
             <FileUploadZone
               files={formData.files}
               onFilesChange={(files) => updateField('files', files)}
             />
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="text-center py-12">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              AI Analysis
-            </h2>
-            <p className="text-sm text-gray-500">
-              After uploading your plans, our AI will analyze the blueprints and
-              extract building dimensions, materials, and quantities. This
-              typically takes 1-3 minutes.
-            </p>
-            <div className="mt-8 inline-flex items-center gap-2 text-sm text-gray-400">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary" />
-              Analysis will start after upload
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-xs text-blue-700">
+                <strong>What happens next:</strong> Your project will open in the
+                workspace where you can view your plans, run AI analysis to extract
+                building details, and generate a full cost estimate.
+              </p>
             </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="text-center py-12">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Review Extracted Model
-            </h2>
-            <p className="text-sm text-gray-500">
-              Once AI analysis is complete, you will be able to review and adjust
-              the extracted building model before generating the takeoff
-              spreadsheet.
-            </p>
           </div>
         )}
 
@@ -209,12 +188,21 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
           <Button
             variant="ghost"
             onClick={handleBack}
-            disabled={step === 0}
+            disabled={step === 0 || isCreating}
           >
             Back
           </Button>
-          <Button onClick={handleNext} disabled={!canAdvance()}>
-            {step === STEPS.length - 1 ? 'Create Project' : 'Next'}
+          <Button onClick={handleNext} disabled={!canAdvance() || isCreating}>
+            {isCreating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Creating...
+              </>
+            ) : step === STEPS.length - 1 ? (
+              'Create Project →'
+            ) : (
+              'Next'
+            )}
           </Button>
         </div>
       </div>
