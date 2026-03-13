@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useProjectStore } from './useProjectStore';
 import { calculateAll } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
@@ -9,6 +9,8 @@ import type { PdfPage } from '@/lib/api/python-service';
 /**
  * Hook that orchestrates the full analysis pipeline:
  * PDF pages → Claude vision analysis → calculator execution → spreadsheet population
+ *
+ * Includes proper timeouts, cancellation, and progress feedback.
  */
 export function useAnalysisPipeline() {
   const {
@@ -21,17 +23,42 @@ export function useAnalysisPipeline() {
     dispatch,
   } = useProjectStore();
 
+  const abortRef = useRef<AbortController | null>(null);
+
+  /**
+   * Cancel any in-progress pipeline operation.
+   */
+  const cancel = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setStatus('idle');
+    addAnalysisMessage('Cancelled by user');
+  }, [setStatus, addAnalysisMessage]);
+
   /**
    * Run Claude vision analysis on PDF pages.
    * Streams progress and extracts BuildingModel.
    */
   const analyzeBlueprints = useCallback(
-    async (pages: PdfPage[], projectMeta?: { name?: string; address?: string; buildingType?: string }) => {
+    async (
+      pages: PdfPage[],
+      projectMeta?: { name?: string; address?: string; buildingType?: string }
+    ) => {
+      // Cancel any previous run
+      if (abortRef.current) abortRef.current.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setStatus('analyzing');
       dispatch({ type: 'CLEAR_ANALYSIS_MESSAGES' });
-      addAnalysisMessage('Starting blueprint analysis...');
+      addAnalysisMessage(`Analyzing ${pages.length} blueprint page(s)...`);
 
       try {
+        // Client-side timeout: 3 minutes max for vision analysis
+        const timeoutId = setTimeout(() => controller.abort(), 180_000);
+
         const res = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -43,10 +70,14 @@ export function useAnalysisPipeline() {
             })),
             projectMeta,
           }),
+          signal: controller.signal,
         });
 
+        clearTimeout(timeoutId);
+
         if (!res.ok) {
-          throw new Error(`Analysis failed: ${res.status}`);
+          const errBody = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(errBody.error || `Analysis failed: ${res.status}`);
         }
 
         const reader = res.body?.getReader();
@@ -55,6 +86,7 @@ export function useAnalysisPipeline() {
         const decoder = new TextDecoder();
         let buffer = '';
         let buildingModel: Record<string, unknown> | null = null;
+        let charCount = 0;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -73,21 +105,28 @@ export function useAnalysisPipeline() {
               const event = JSON.parse(jsonStr);
 
               if (event.type === 'text') {
-                // Update analysis progress — look for section headers
-                if (event.text.includes('##') || event.text.includes('**Page')) {
+                charCount += event.text.length;
+                // Show progress updates at key points
+                if (event.text.includes('##') || event.text.includes('**Page') || event.text.includes('**Key')) {
                   const cleanText = event.text.replace(/[#*]/g, '').trim();
                   if (cleanText.length > 3) {
                     addAnalysisMessage(cleanText);
                   }
                 }
+                // Also show periodic progress
+                if (charCount % 2000 < 50) {
+                  addAnalysisMessage('Claude is analyzing blueprints...');
+                }
               } else if (event.type === 'building_model' && event.model) {
                 buildingModel = event.model;
-                addAnalysisMessage('Building model extracted successfully');
+                addAnalysisMessage('✓ Building model extracted successfully');
               } else if (event.type === 'error') {
                 throw new Error(event.error);
+              } else if (event.type === 'done') {
+                // Stream complete
               }
             } catch (e) {
-              if (e instanceof SyntaxError) continue; // Ignore malformed JSON
+              if (e instanceof SyntaxError) continue; // Ignore malformed JSON chunks
               throw e;
             }
           }
@@ -95,16 +134,27 @@ export function useAnalysisPipeline() {
 
         if (buildingModel) {
           setBuildingModel(buildingModel);
-          addAnalysisMessage('Ready to run calculators');
+          addAnalysisMessage('✓ Ready to run calculators');
           return buildingModel;
         } else {
-          throw new Error('No building model extracted from analysis');
+          throw new Error(
+            'No building model extracted from analysis. Claude may not have recognized the blueprint format.'
+          );
         }
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          addAnalysisMessage('Analysis cancelled or timed out');
+          setStatus('idle');
+          return null;
+        }
         const msg = err instanceof Error ? err.message : 'Analysis failed';
         setError(msg);
-        addAnalysisMessage(`Error: ${msg}`);
+        addAnalysisMessage(`✗ Error: ${msg}`);
         return null;
+      } finally {
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
       }
     },
     [setBuildingModel, setStatus, setError, addAnalysisMessage, dispatch]
@@ -121,11 +171,20 @@ export function useAnalysisPipeline() {
         return;
       }
 
+      // Cancel any previous run
+      if (abortRef.current) abortRef.current.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setStatus('calculating');
       addAnalysisMessage('Running trade calculators...');
 
       try {
-        const result = await calculateAll(buildingModel, state.costs || undefined);
+        const result = await calculateAll(
+          buildingModel,
+          state.costs || undefined,
+          controller.signal
+        );
 
         // Transform Python LineItems to frontend SpreadsheetLineItems
         const spreadsheetItems = result.items.map((item, index) =>
@@ -135,12 +194,21 @@ export function useAnalysisPipeline() {
         setLineItems(spreadsheetItems, result.items);
         setStatus('ready');
         addAnalysisMessage(
-          `Calculation complete: ${result.count} line items across ${result.trades.length} trades`
+          `✓ Complete: ${result.count} line items across ${result.trades.length} trades`
         );
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          addAnalysisMessage('Calculation cancelled');
+          setStatus('idle');
+          return;
+        }
         const msg = err instanceof Error ? err.message : 'Calculation failed';
         setError(msg);
-        addAnalysisMessage(`Error: ${msg}`);
+        addAnalysisMessage(`✗ Error: ${msg}`);
+      } finally {
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
       }
     },
     [state.buildingModel, state.costs, setLineItems, setStatus, setError, addAnalysisMessage]
@@ -150,7 +218,10 @@ export function useAnalysisPipeline() {
    * Full pipeline: analyze blueprints then run calculators.
    */
   const runFullPipeline = useCallback(
-    async (pages: PdfPage[], projectMeta?: { name?: string; address?: string; buildingType?: string }) => {
+    async (
+      pages: PdfPage[],
+      projectMeta?: { name?: string; address?: string; buildingType?: string }
+    ) => {
       const model = await analyzeBlueprints(pages, projectMeta);
       if (model) {
         await runCalculators(model);
@@ -163,6 +234,7 @@ export function useAnalysisPipeline() {
     analyzeBlueprints,
     runCalculators,
     runFullPipeline,
+    cancel,
     isAnalyzing: state.analysisStatus === 'analyzing',
     isCalculating: state.analysisStatus === 'calculating',
     isReady: state.analysisStatus === 'ready',

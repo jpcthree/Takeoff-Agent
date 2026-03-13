@@ -5,7 +5,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || '',
 });
 
-export const maxDuration = 120; // Allow up to 2 minutes for vision analysis
+export const maxDuration = 300; // Pro plan: 5 min max for multi-page vision analysis
 
 // ---------------------------------------------------------------------------
 // Route handler — POST /api/analyze

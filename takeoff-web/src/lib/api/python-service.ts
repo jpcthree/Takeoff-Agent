@@ -1,8 +1,8 @@
 /**
- * Typed client for the FastAPI Python service.
+ * Typed client for the Python service — all calls go through
+ * Next.js API routes (server-side proxies) to avoid CORS and
+ * keep the Python API URL private.
  */
-
-const PYTHON_API_URL = process.env.NEXT_PUBLIC_PYTHON_API_URL || process.env.PYTHON_API_URL || 'http://localhost:8000';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,92 +49,88 @@ export interface PdfConvertResponse {
 }
 
 // ---------------------------------------------------------------------------
-// API Client
+// PDF Conversion — via /api/pdf/convert proxy
 // ---------------------------------------------------------------------------
 
-async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${PYTHON_API_URL}${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+export async function convertPdf(
+  file: File,
+  dpi: number = 150,
+  signal?: AbortSignal
+): Promise<PdfConvertResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('dpi', String(dpi));
+
+  const res = await fetch('/api/pdf/convert', {
+    method: 'POST',
+    body: formData,
+    signal,
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `API error: ${res.status}`);
+    const error = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(error.error || `PDF conversion failed: ${res.status}`);
   }
 
   return res.json();
 }
 
-/**
- * Run all 9 trade calculators against a building model.
- */
+// ---------------------------------------------------------------------------
+// Calculators — via /api/calculate proxy
+// ---------------------------------------------------------------------------
+
 export async function calculateAll(
   buildingModel: Record<string, unknown>,
-  costs?: Record<string, unknown>
+  costs?: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<CalculateAllResponse> {
-  return apiRequest<CalculateAllResponse>('/calculate/all', {
+  const res = await fetch('/api/calculate', {
     method: 'POST',
-    body: JSON.stringify({
-      building_model: buildingModel,
-      costs: costs || null,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ building_model: buildingModel, costs: costs || null }),
+    signal,
   });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(error.error || `Calculation failed: ${res.status}`);
+  }
+
+  return res.json();
 }
 
-/**
- * Run a single trade calculator.
- */
 export async function calculateTrade(
   trade: string,
   buildingModel: Record<string, unknown>,
-  costs?: Record<string, unknown>
+  costs?: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<CalculateTradeResponse> {
-  return apiRequest<CalculateTradeResponse>(`/calculate/${trade}`, {
+  const res = await fetch('/api/calculate', {
     method: 'POST',
-    body: JSON.stringify({
-      building_model: buildingModel,
-      costs: costs || null,
-    }),
-  });
-}
-
-/**
- * Convert a PDF file to page images.
- */
-export async function convertPdf(file: File, dpi: number = 300): Promise<PdfConvertResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const url = `${PYTHON_API_URL}/pdf/convert?dpi=${dpi}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    body: formData,
-    // Don't set Content-Type header — let browser set multipart boundary
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ building_model: buildingModel, costs: costs || null, trade }),
+    signal,
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `PDF conversion failed: ${res.status}`);
+    const error = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(error.error || `Calculation failed: ${res.status}`);
   }
 
   return res.json();
 }
 
-/**
- * Export line items to an .xlsx file and trigger browser download.
- */
+// ---------------------------------------------------------------------------
+// Export — via /api/export proxy
+// ---------------------------------------------------------------------------
+
 export async function exportXlsx(
   lineItems: LineItemDict[],
   projectName: string = '',
-  projectAddress: string = ''
+  projectAddress: string = '',
+  signal?: AbortSignal
 ): Promise<void> {
-  const url = `${PYTHON_API_URL}/export/xlsx`;
-  const res = await fetch(url, {
+  const res = await fetch('/api/export', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -142,11 +138,12 @@ export async function exportXlsx(
       project_name: projectName,
       project_address: projectAddress,
     }),
+    signal,
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `Export failed: ${res.status}`);
+    const error = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(error.error || `Export failed: ${res.status}`);
   }
 
   // Download the file
@@ -161,16 +158,23 @@ export async function exportXlsx(
   window.URL.revokeObjectURL(downloadUrl);
 }
 
-/**
- * Get the default cost database.
- */
+// ---------------------------------------------------------------------------
+// Costs — via /api/costs (already exists as Next.js route)
+// ---------------------------------------------------------------------------
+
 export async function getDefaultCosts(): Promise<Record<string, unknown>> {
-  return apiRequest<Record<string, unknown>>('/costs/default');
+  const res = await fetch('/api/costs');
+  if (!res.ok) {
+    throw new Error('Failed to load default costs');
+  }
+  return res.json();
 }
 
-/**
- * List available trade calculators.
- */
 export async function listTrades(): Promise<{ trades: string[] }> {
-  return apiRequest<{ trades: string[] }>('/calculate/trades');
+  return {
+    trades: [
+      'framing', 'insulation', 'drywall', 'roofing',
+      'hvac', 'electrical', 'plumbing', 'exterior', 'interior',
+    ],
+  };
 }

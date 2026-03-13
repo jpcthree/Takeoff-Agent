@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,6 +12,9 @@ import {
   Play,
   Loader2,
   Calculator,
+  X,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useAnalysisPipeline } from '@/hooks/useAnalysisPipeline';
@@ -19,17 +22,42 @@ import { convertPdf } from '@/lib/api/python-service';
 
 function PdfViewer() {
   const { state, setPdfFile, setPdfPages, setStatus, setError } = useProjectStore();
-  const { pdfPages, analysisStatus, buildingModel, analysisMessages } = state;
-  const { runFullPipeline, runCalculators, isAnalyzing, isCalculating } = useAnalysisPipeline();
+  const { pdfPages, analysisStatus, buildingModel, analysisMessages, error } = state;
+  const {
+    runFullPipeline,
+    runCalculators,
+    cancel,
+    isAnalyzing,
+    isCalculating,
+  } = useAnalysisPipeline();
 
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(100);
   const [isConverting, setIsConverting] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalPages = pdfPages.length;
   const hasPlan = totalPages > 0;
   const currentPageData = hasPlan ? pdfPages[currentPage - 1] : null;
+  const isBusy = isAnalyzing || isCalculating || isConverting;
+
+  // Elapsed timer while analyzing/calculating
+  useEffect(() => {
+    if (isAnalyzing || isCalculating) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isAnalyzing, isCalculating]);
 
   const handleFileUpload = useCallback(
     async (file: File) => {
@@ -43,14 +71,15 @@ function PdfViewer() {
       setStatus('converting');
 
       try {
-        const result = await convertPdf(file, 150); // 150 DPI for preview
+        const result = await convertPdf(file, 150);
         setPdfPages(result.pages);
         setCurrentPage(1);
         setStatus('idle');
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : 'Failed to convert PDF'
+          err instanceof Error ? err.message : 'Failed to convert PDF. Is the Python API running?'
         );
+        setStatus('idle');
       } finally {
         setIsConverting(false);
       }
@@ -70,6 +99,12 @@ function PdfViewer() {
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
+
+  const formatElapsed = (s: number) => {
+    const min = Math.floor(s / 60);
+    const sec = s % 60;
+    return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
+  };
 
   return (
     <div className="flex h-full flex-col bg-gray-50">
@@ -102,6 +137,7 @@ function PdfViewer() {
             onClick={() => fileInputRef.current?.click()}
             className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer ml-1"
             title="Upload PDF"
+            disabled={isBusy}
           >
             <Upload className="h-4 w-4" />
           </button>
@@ -128,6 +164,7 @@ function PdfViewer() {
           <div className="flex flex-col items-center gap-3 text-center px-6">
             <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             <p className="text-sm text-gray-500">Converting PDF pages...</p>
+            <p className="text-xs text-gray-400">This may take a moment for large files</p>
           </div>
         ) : hasPlan && currentPageData ? (
           <div
@@ -156,12 +193,49 @@ function PdfViewer() {
         )}
       </div>
 
+      {/* Error display */}
+      {error && (
+        <div className="border-t border-red-200 bg-red-50 px-3 py-2 shrink-0">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700 flex-1">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-400 hover:text-red-600 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Analysis progress */}
-      {(isAnalyzing || isCalculating) && analysisMessages.length > 0 && (
-        <div className="border-t border-gray-200 bg-blue-50 px-3 py-2 shrink-0 max-h-[120px] overflow-y-auto">
-          {analysisMessages.slice(-5).map((msg, i) => (
-            <p key={i} className="text-xs text-blue-700 truncate">{msg}</p>
-          ))}
+      {(isAnalyzing || isCalculating) && (
+        <div className="border-t border-blue-200 bg-blue-50 px-3 py-2 shrink-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-blue-800">
+              {isAnalyzing ? 'Analyzing blueprints...' : 'Running calculators...'}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-600 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {formatElapsed(elapsed)}
+              </span>
+              <button
+                onClick={cancel}
+                className="text-xs text-red-600 hover:text-red-800 flex items-center gap-0.5 cursor-pointer"
+              >
+                <X className="h-3 w-3" /> Cancel
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[80px] overflow-y-auto">
+            {analysisMessages.slice(-5).map((msg, i) => (
+              <p key={i} className="text-xs text-blue-700 truncate">
+                {msg}
+              </p>
+            ))}
+          </div>
         </div>
       )}
 
@@ -171,26 +245,34 @@ function PdfViewer() {
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => runFullPipeline(pdfPages, {
-                name: state.projectMeta.name,
-                address: state.projectMeta.address,
-                buildingType: state.projectMeta.buildingType,
-              })}
-              disabled={isAnalyzing || isCalculating}
+              onClick={() =>
+                runFullPipeline(pdfPages, {
+                  name: state.projectMeta.name,
+                  address: state.projectMeta.address,
+                  buildingType: state.projectMeta.buildingType,
+                })
+              }
+              disabled={isBusy}
               className="flex-1 flex items-center justify-center gap-1.5 bg-primary text-white text-xs font-medium px-3 py-1.5 rounded hover:bg-primary/90 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
             >
               {isAnalyzing ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Analyzing...</>
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analyzing...
+                </>
               ) : isCalculating ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculating...</>
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculating...
+                </>
               ) : (
-                <><Play className="h-3.5 w-3.5" /> Analyze &amp; Calculate</>
+                <>
+                  <Play className="h-3.5 w-3.5" /> Analyze &amp; Calculate
+                </>
               )}
             </button>
             {buildingModel && (
               <button
                 onClick={() => runCalculators()}
-                disabled={isAnalyzing || isCalculating}
+                disabled={isBusy}
                 className="flex items-center gap-1.5 bg-green-600 text-white text-xs font-medium px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
               >
                 <Calculator className="h-3.5 w-3.5" /> Recalculate
