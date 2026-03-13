@@ -458,18 +458,43 @@ class RoofSection:
             "rake_length": self.rake_length,
         }
 
+    @staticmethod
+    def _to_float(val, fallback: float = 0.0) -> float:
+        """Convert a value that may be a Dimension dict, float, or int to float."""
+        if isinstance(val, dict):
+            # Dimension format: {"feet": N, "inches": N}
+            return float(val.get("feet", 0)) + float(val.get("inches", 0)) / 12.0
+        if isinstance(val, (int, float)):
+            return float(val)
+        return fallback
+
     @classmethod
     def from_dict(cls, d: dict) -> RoofSection:
+        tf = cls._to_float
+        pitch = tf(d.get("pitch", 6.0))
+
+        # horizontal_area is the plan-view footprint; total_area_sf is sloped area.
+        # If only total_area_sf is provided, convert back to horizontal by dividing
+        # out the slope factor so actual_area property doesn't double-count.
+        horiz = tf(d.get("horizontal_area", 0.0))
+        if horiz <= 0:
+            total_sf = tf(d.get("total_area_sf", 0.0))
+            if total_sf > 0 and pitch > 0:
+                slope_factor = math.sqrt(1 + (pitch / 12.0) ** 2)
+                horiz = total_sf / slope_factor
+            else:
+                horiz = total_sf  # fallback: treat as horizontal
+
         return cls(
-            id=d.get("id", ""), section_type=d.get("section_type", "gable"),
-            pitch=d.get("pitch", 6.0),
-            horizontal_area=d.get("horizontal_area", 0.0),
+            id=d.get("id", ""), section_type=d.get("section_type", d.get("style", "gable")),
+            pitch=pitch,
+            horizontal_area=horiz,
             material=d.get("material", "asphalt_shingle"),
-            ridge_length=d.get("ridge_length", 0.0),
-            hip_length=d.get("hip_length", 0.0),
-            valley_length=d.get("valley_length", 0.0),
-            eave_length=d.get("eave_length", 0.0),
-            rake_length=d.get("rake_length", 0.0),
+            ridge_length=tf(d.get("ridge_length", 0.0)),
+            hip_length=tf(d.get("hip_length", 0.0)),
+            valley_length=tf(d.get("valley_length", 0.0)),
+            eave_length=tf(d.get("eave_length", 0.0)),
+            rake_length=tf(d.get("rake_length", 0.0)),
         )
 
 
@@ -1063,18 +1088,32 @@ class BuildingModel:
         }
 
     @classmethod
+    def _parse_roof_sections(cls, d: dict) -> list:
+        """Parse roof data — handles both 'roof_sections' array and flat 'roof' object from Claude."""
+        # Prefer explicit roof_sections array
+        if d.get("roof_sections"):
+            return [RoofSection.from_dict(rs) for rs in d["roof_sections"]]
+
+        # Fall back to flat 'roof' object (Claude analysis schema)
+        roof = d.get("roof")
+        if isinstance(roof, dict):
+            return [RoofSection.from_dict(roof)]
+
+        return []
+
+    @classmethod
     def from_dict(cls, d: dict) -> BuildingModel:
         return cls(
             project_name=d.get("project_name", ""),
             project_address=d.get("project_address", ""),
             building_type=d.get("building_type", "residential"),
             stories=d.get("stories", 1),
-            total_sqft=d.get("total_sqft", 0.0),
+            total_sqft=d.get("total_sqft", d.get("sqft", 0.0)),
             conditioned_sqft=d.get("conditioned_sqft", 0.0),
             rooms=[Room.from_dict(r) for r in d.get("rooms", [])],
             walls=[Wall.from_dict(w) for w in d.get("walls", [])],
             openings=[Opening.from_dict(o) for o in d.get("openings", [])],
-            roof_sections=[RoofSection.from_dict(rs) for rs in d.get("roof_sections", [])],
+            roof_sections=cls._parse_roof_sections(d),
             foundation=Foundation.from_dict(d.get("foundation", {})),
             stairs=[StairCase.from_dict(s) for s in d.get("stairs", [])],
             hvac=HVACSystem.from_dict(d["hvac"]) if d.get("hvac") else None,
