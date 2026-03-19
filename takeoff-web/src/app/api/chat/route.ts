@@ -30,7 +30,7 @@ function buildSystemPrompt(context: {
     `\`\`\``,
     ``,
     `Available action types:`,
-    `- recalculate_trade: Re-run a specific trade calculator (trades: framing, insulation, drywall, roofing, gutters, exterior)`,
+    `- recalculate_trade: Re-run a specific trade calculator (trades: insulation, drywall, roofing, gutters)`,
     `- update_building_model: Modify a field on the building model, e.g. {"type": "update_building_model", "changes": {"roof_insulation_r_value": 60}}`,
     ``,
     `Insulation covers many assembly types. Modifiable fields include: walls[].insulation_type/r_value/continuous_insulation_type/continuous_insulation_r_value, attic_insulation_type/r_value, attic_baffles/attic_baffle_count, attic_hatch_insulation, roof_insulation_type/r_value (cathedral), slab_edge_insulation/r_value/type/depth/perimeter, under_slab_insulation/r_value/area, basement_wall_insulation/type/r_value/location/area, rim_joist_insulation/type/r_value/perimeter, knee_wall_insulation/type/r_value/area, floor_over_unconditioned/type/r_value/area/support, garage_ceiling_insulation/type/r_value/area, garage_wall_insulation/type/r_value/area, crawlspace_wall_insulation/type/r_value, air_sealing, vapor_barrier, house_wrap. After updating fields, always recalculate_trade insulation.`,

@@ -176,12 +176,10 @@ export async function getDefaultCosts(): Promise<Record<string, unknown>> {
 
 /** Trades available for takeoff selection. */
 export const AVAILABLE_TRADES = [
-  { id: 'framing', label: 'Framing' },
   { id: 'insulation', label: 'Insulation' },
   { id: 'drywall', label: 'Drywall' },
   { id: 'roofing', label: 'Roofing' },
   { id: 'gutters', label: 'Gutters & Downspouts' },
-  { id: 'exterior', label: 'Exterior Painting' },
 ] as const;
 
 /**

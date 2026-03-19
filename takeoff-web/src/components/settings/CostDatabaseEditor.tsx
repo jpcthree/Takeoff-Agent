@@ -37,22 +37,18 @@ interface CostsData {
 /* ---------- Helpers ---------- */
 const TRADE_SECTIONS = [
   'labor_rates',
-  'framing',
   'insulation',
   'drywall',
   'roofing',
   'gutters',
-  'exterior',
 ] as const;
 
 const TRADE_LABELS: Record<string, string> = {
   labor_rates: 'Labor Rates',
-  framing: 'Framing',
   insulation: 'Insulation',
   drywall: 'Drywall',
   roofing: 'Roofing',
   gutters: 'Gutters & Downspouts',
-  exterior: 'Exterior Painting',
 };
 
 function formatKey(key: string): string {
