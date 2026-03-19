@@ -36,6 +36,12 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
       "stud_spacing": 16,
       "insulation_type": "batt|blown|spray_foam_open|spray_foam_closed|rigid|none",
       "insulation_r_value": 0,
+      "insulation_facing": "kraft|foil|unfaced|fsk",
+      "continuous_insulation_type": "rigid_xps|rigid_polyiso|rigid_eps|mineral_wool|none",
+      "continuous_insulation_r_value": 0,
+      "continuous_insulation_thickness": 0,
+      "wall_designation": "W-1",
+      "construction_type": "wood|metal|cmu|sip|icf",
       "drywall_type": "standard_1_2|moisture_resistant|fire_rated_5_8|cement_board|mold_resistant",
       "sound_insulation": false,
       "openings": ["o1", "o2"]
@@ -98,6 +104,48 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
   "has_cathedral_ceiling": false,
   "roof_insulation_type": "spray_foam_open|spray_foam_closed|rigid|none",
   "roof_insulation_r_value": 0,
+  "climate_zone": "string (e.g. '4A', '5', '6') — from title block or energy notes",
+  "iecc_code_edition": "string (e.g. '2021', '2018') — from energy compliance notes",
+  "slab_edge_insulation": false,
+  "slab_edge_insulation_r_value": 0,
+  "slab_edge_insulation_type": "xps|eps|polyiso",
+  "slab_edge_insulation_thickness": 0,
+  "slab_edge_insulation_depth": 0,
+  "slab_edge_perimeter": 0,
+  "under_slab_insulation": false,
+  "under_slab_insulation_r_value": 0,
+  "under_slab_insulation_area": 0,
+  "basement_wall_insulation": false,
+  "basement_wall_insulation_type": "rigid|spray_foam_closed|batt",
+  "basement_wall_insulation_r_value": 0,
+  "basement_wall_insulation_location": "interior|exterior",
+  "basement_wall_area": 0,
+  "rim_joist_insulation": false,
+  "rim_joist_insulation_type": "spray_foam_closed|rigid|batt",
+  "rim_joist_insulation_r_value": 0,
+  "rim_joist_perimeter": 0,
+  "rim_joist_height": 9.25,
+  "knee_wall_insulation": false,
+  "knee_wall_insulation_type": "batt|spray_foam_open|spray_foam_closed",
+  "knee_wall_insulation_r_value": 0,
+  "knee_wall_area": 0,
+  "floor_over_unconditioned": false,
+  "floor_over_unconditioned_type": "batt|blown|spray_foam_closed",
+  "floor_over_unconditioned_r_value": 0,
+  "floor_over_unconditioned_area": 0,
+  "floor_over_unconditioned_support": "wire|netting|rigid",
+  "floor_over_unconditioned_joist_size": "2x10",
+  "garage_ceiling_insulation": false,
+  "garage_ceiling_insulation_type": "batt|spray_foam_open|spray_foam_closed",
+  "garage_ceiling_insulation_r_value": 0,
+  "garage_ceiling_area": 0,
+  "garage_wall_insulation": false,
+  "garage_wall_insulation_r_value": 0,
+  "garage_wall_area": 0,
+  "attic_baffles": false,
+  "attic_baffle_count": 0,
+  "attic_hatch_insulation": false,
+  "attic_hatch_count": 1,
   "vapor_barrier": true,
   "house_wrap": true,
   "air_sealing": true,
@@ -153,7 +201,18 @@ const ANALYSIS_RULES = `
    - Exterior walls: 2×6
    - Interior walls: 2×4
    - Standard drywall: 1/2" walls, 5/8" ceilings/garages
-7. **Insulation is critical.** For every exterior wall, set insulation_type and R-value. Set attic_area (= footprint area if has_attic). If the foundation is crawlspace, set crawlspace fields. If there's no attic (cathedral/vaulted), set has_cathedral_ceiling=true and roof_insulation fields.
+7. **Insulation scope must be comprehensive — analyze every assembly:**
+   - **Exterior walls**: For every exterior wall, set BOTH cavity insulation (insulation_type, insulation_r_value, insulation_facing) AND continuous insulation (ci) if present (continuous_insulation_type, continuous_insulation_r_value). Note wall_designation (W-1, W-2) and construction_type (wood, metal, cmu, sip, icf) from the plans.
+   - **Attic**: Set attic_area (= footprint area if has_attic), attic_insulation_type/r_value. Set attic_baffles=true and attic_baffle_count if vented attic. Set attic_hatch_insulation=true if hatch/access shown.
+   - **Cathedral/vaulted**: If no attic, set has_cathedral_ceiling=true, roof_insulation_type/r_value for roof deck insulation.
+   - **Slab foundations**: Check section details for slab_edge_insulation (R-value, type, thickness, depth in feet, perimeter). Check for under_slab_insulation.
+   - **Basement**: Set basement_wall_insulation fields (type, R-value, location=interior/exterior, total wall area).
+   - **Crawlspace**: Set crawlspace fields (wall insulation type/R-value, perimeter, vapor barrier).
+   - **Rim/band joists**: Set rim_joist_insulation=true with type (usually spray_foam_closed), R-value, perimeter (= foundation perimeter), height (rim board height in inches).
+   - **Knee walls** (bonus rooms, cape cod dormers): Set knee_wall_insulation fields with area.
+   - **Floor over unconditioned space** (above garage, cantilevers, over crawlspace): Set floor_over_unconditioned fields with area, type, support method (wire/netting).
+   - **Garage**: Set garage_ceiling_insulation if living space above (with area). Set garage_wall_insulation for shared walls with conditioned space.
+   - **Climate/code**: Set climate_zone and iecc_code_edition if found on plans or energy notes.
 8. **Be conservative.** Include items you're unsure about — user can remove them.
 9. **State your assumptions** before the JSON.`;
 

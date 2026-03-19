@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Tuple
+from typing import ClassVar, List, Optional, Tuple
 from enum import Enum
 
 
@@ -272,6 +272,13 @@ class Wall:
     sheathing_type: str = "OSB"  # OSB, plywood, none
     interior_finish: str = "drywall"  # drywall, cement_board, none
     exterior_finish: str = "siding"  # siding, brick, stucco, stone, none
+    # Continuous insulation (ci) — exterior of sheathing
+    continuous_insulation_type: str = ""  # "rigid_xps", "rigid_polyiso", "rigid_eps", "mineral_wool", ""
+    continuous_insulation_r_value: float = 0.0
+    continuous_insulation_thickness: float = 0.0  # inches
+    insulation_facing: str = ""  # "kraft", "foil", "unfaced", "fsk", ""
+    wall_designation: str = ""  # plan designation e.g. "W-1", "W-2"
+    construction_type: str = "wood"  # "wood", "metal", "cmu", "sip", "icf"
     # Sound insulation (for interior walls)
     sound_insulation: bool = False
     sound_insulation_type: str = ""  # "fiberglass_batt", "mineral_wool"
@@ -304,6 +311,12 @@ class Wall:
             "openings": self.openings,
             "insulation_type": self.insulation_type,
             "insulation_r_value": self.insulation_r_value,
+            "continuous_insulation_type": self.continuous_insulation_type,
+            "continuous_insulation_r_value": self.continuous_insulation_r_value,
+            "continuous_insulation_thickness": self.continuous_insulation_thickness,
+            "insulation_facing": self.insulation_facing,
+            "wall_designation": self.wall_designation,
+            "construction_type": self.construction_type,
             "is_fire_rated": self.is_fire_rated,
             "fire_rating_hours": self.fire_rating_hours,
             "sheathing_type": self.sheathing_type,
@@ -316,7 +329,7 @@ class Wall:
         }
 
     # Map common Claude-output insulation type strings to canonical values
-    _INSULATION_NORM: dict = {
+    _INSULATION_NORM: ClassVar[dict] = {
         "fiberglass_batt": "batt", "mineral_wool_batt": "batt", "fiberglass": "batt",
         "closed_cell_spray": "spray_foam_closed", "open_cell_spray": "spray_foam_open",
         "blown_cellulose": "blown", "rigid_foam": "rigid",
@@ -338,6 +351,12 @@ class Wall:
             openings=d.get("openings", []),
             insulation_type=cls._normalize_insulation(d.get("insulation_type", "batt")),
             insulation_r_value=d.get("insulation_r_value", 13.0),
+            continuous_insulation_type=d.get("continuous_insulation_type", ""),
+            continuous_insulation_r_value=d.get("continuous_insulation_r_value", 0.0),
+            continuous_insulation_thickness=d.get("continuous_insulation_thickness", 0.0),
+            insulation_facing=d.get("insulation_facing", ""),
+            wall_designation=d.get("wall_designation", ""),
+            construction_type=d.get("construction_type", "wood"),
             is_fire_rated=d.get("is_fire_rated", False),
             fire_rating_hours=d.get("fire_rating_hours", 0.0),
             sheathing_type=d.get("sheathing_type", "OSB"),
@@ -996,6 +1015,68 @@ class BuildingModel:
     air_sealing: bool = False
     air_sealing_sqft: float = 0.0  # conditioned envelope area for sealing
 
+    # Code compliance / climate
+    climate_zone: str = ""  # "4A", "5", "6" etc.
+    iecc_code_edition: str = ""  # "2021", "2018", etc.
+
+    # Slab insulation (Assembly D)
+    slab_edge_insulation: bool = False
+    slab_edge_insulation_r_value: float = 0.0
+    slab_edge_insulation_type: str = "xps"  # "xps", "eps", "polyiso"
+    slab_edge_insulation_thickness: float = 0.0  # inches
+    slab_edge_insulation_depth: float = 0.0  # feet (vertical or horizontal extent)
+    slab_edge_perimeter: float = 0.0  # linear feet
+    under_slab_insulation: bool = False
+    under_slab_insulation_r_value: float = 0.0
+    under_slab_insulation_type: str = "xps"
+    under_slab_insulation_area: float = 0.0  # sf
+
+    # Basement wall insulation (Assembly E)
+    basement_wall_insulation: bool = False
+    basement_wall_insulation_type: str = "rigid"  # "rigid", "spray_foam_closed", "batt"
+    basement_wall_insulation_r_value: float = 0.0
+    basement_wall_insulation_location: str = "interior"  # "interior", "exterior"
+    basement_wall_area: float = 0.0  # sf total
+    basement_wall_above_grade_area: float = 0.0
+    basement_wall_below_grade_area: float = 0.0
+
+    # Rim/band joist insulation (Assembly G)
+    rim_joist_insulation: bool = False
+    rim_joist_insulation_type: str = "spray_foam_closed"  # "spray_foam_closed", "rigid", "batt"
+    rim_joist_insulation_r_value: float = 0.0
+    rim_joist_perimeter: float = 0.0  # lf
+    rim_joist_height: float = 9.25  # inches (typical for 2x10 TJI)
+
+    # Knee wall insulation (Assembly G)
+    knee_wall_insulation: bool = False
+    knee_wall_insulation_type: str = "batt"
+    knee_wall_insulation_r_value: float = 0.0
+    knee_wall_area: float = 0.0  # sf
+
+    # Floor over unconditioned space (Assembly C)
+    floor_over_unconditioned: bool = False
+    floor_over_unconditioned_type: str = "batt"  # "batt", "blown", "spray_foam_closed"
+    floor_over_unconditioned_r_value: float = 0.0
+    floor_over_unconditioned_area: float = 0.0  # sf
+    floor_over_unconditioned_support: str = "wire"  # "wire", "netting", "rigid"
+    floor_over_unconditioned_joist_size: str = "2x10"
+
+    # Garage insulation (Assembly G)
+    garage_ceiling_insulation: bool = False
+    garage_ceiling_insulation_type: str = "batt"
+    garage_ceiling_insulation_r_value: float = 0.0
+    garage_ceiling_area: float = 0.0  # sf (only if living space above)
+    garage_wall_insulation: bool = False
+    garage_wall_insulation_type: str = "batt"
+    garage_wall_insulation_r_value: float = 0.0
+    garage_wall_area: float = 0.0  # sf (shared walls with conditioned space)
+
+    # Attic details (Assembly B)
+    attic_baffles: bool = False
+    attic_baffle_count: int = 0  # number of rafter bays needing baffles
+    attic_hatch_insulation: bool = False
+    attic_hatch_count: int = 1
+
     # Metadata
     scale: str = ""  # e.g., "1/4 inch = 1 foot"
     notes: List[str] = field(default_factory=list)
@@ -1101,6 +1182,52 @@ class BuildingModel:
             "floor_sound_insulation_area": self.floor_sound_insulation_area,
             "air_sealing": self.air_sealing,
             "air_sealing_sqft": self.air_sealing_sqft,
+            "climate_zone": self.climate_zone,
+            "iecc_code_edition": self.iecc_code_edition,
+            "slab_edge_insulation": self.slab_edge_insulation,
+            "slab_edge_insulation_r_value": self.slab_edge_insulation_r_value,
+            "slab_edge_insulation_type": self.slab_edge_insulation_type,
+            "slab_edge_insulation_thickness": self.slab_edge_insulation_thickness,
+            "slab_edge_insulation_depth": self.slab_edge_insulation_depth,
+            "slab_edge_perimeter": self.slab_edge_perimeter,
+            "under_slab_insulation": self.under_slab_insulation,
+            "under_slab_insulation_r_value": self.under_slab_insulation_r_value,
+            "under_slab_insulation_type": self.under_slab_insulation_type,
+            "under_slab_insulation_area": self.under_slab_insulation_area,
+            "basement_wall_insulation": self.basement_wall_insulation,
+            "basement_wall_insulation_type": self.basement_wall_insulation_type,
+            "basement_wall_insulation_r_value": self.basement_wall_insulation_r_value,
+            "basement_wall_insulation_location": self.basement_wall_insulation_location,
+            "basement_wall_area": self.basement_wall_area,
+            "basement_wall_above_grade_area": self.basement_wall_above_grade_area,
+            "basement_wall_below_grade_area": self.basement_wall_below_grade_area,
+            "rim_joist_insulation": self.rim_joist_insulation,
+            "rim_joist_insulation_type": self.rim_joist_insulation_type,
+            "rim_joist_insulation_r_value": self.rim_joist_insulation_r_value,
+            "rim_joist_perimeter": self.rim_joist_perimeter,
+            "rim_joist_height": self.rim_joist_height,
+            "knee_wall_insulation": self.knee_wall_insulation,
+            "knee_wall_insulation_type": self.knee_wall_insulation_type,
+            "knee_wall_insulation_r_value": self.knee_wall_insulation_r_value,
+            "knee_wall_area": self.knee_wall_area,
+            "floor_over_unconditioned": self.floor_over_unconditioned,
+            "floor_over_unconditioned_type": self.floor_over_unconditioned_type,
+            "floor_over_unconditioned_r_value": self.floor_over_unconditioned_r_value,
+            "floor_over_unconditioned_area": self.floor_over_unconditioned_area,
+            "floor_over_unconditioned_support": self.floor_over_unconditioned_support,
+            "floor_over_unconditioned_joist_size": self.floor_over_unconditioned_joist_size,
+            "garage_ceiling_insulation": self.garage_ceiling_insulation,
+            "garage_ceiling_insulation_type": self.garage_ceiling_insulation_type,
+            "garage_ceiling_insulation_r_value": self.garage_ceiling_insulation_r_value,
+            "garage_ceiling_area": self.garage_ceiling_area,
+            "garage_wall_insulation": self.garage_wall_insulation,
+            "garage_wall_insulation_type": self.garage_wall_insulation_type,
+            "garage_wall_insulation_r_value": self.garage_wall_insulation_r_value,
+            "garage_wall_area": self.garage_wall_area,
+            "attic_baffles": self.attic_baffles,
+            "attic_baffle_count": self.attic_baffle_count,
+            "attic_hatch_insulation": self.attic_hatch_insulation,
+            "attic_hatch_count": self.attic_hatch_count,
             "scale": self.scale,
             "notes": self.notes,
         }
@@ -1164,6 +1291,52 @@ class BuildingModel:
             floor_sound_insulation_area=d.get("floor_sound_insulation_area", 0.0),
             air_sealing=d.get("air_sealing", False),
             air_sealing_sqft=d.get("air_sealing_sqft", 0.0),
+            climate_zone=d.get("climate_zone", ""),
+            iecc_code_edition=d.get("iecc_code_edition", ""),
+            slab_edge_insulation=d.get("slab_edge_insulation", False),
+            slab_edge_insulation_r_value=d.get("slab_edge_insulation_r_value", 0.0),
+            slab_edge_insulation_type=d.get("slab_edge_insulation_type", "xps"),
+            slab_edge_insulation_thickness=d.get("slab_edge_insulation_thickness", 0.0),
+            slab_edge_insulation_depth=d.get("slab_edge_insulation_depth", 0.0),
+            slab_edge_perimeter=d.get("slab_edge_perimeter", 0.0),
+            under_slab_insulation=d.get("under_slab_insulation", False),
+            under_slab_insulation_r_value=d.get("under_slab_insulation_r_value", 0.0),
+            under_slab_insulation_type=d.get("under_slab_insulation_type", "xps"),
+            under_slab_insulation_area=d.get("under_slab_insulation_area", 0.0),
+            basement_wall_insulation=d.get("basement_wall_insulation", False),
+            basement_wall_insulation_type=Wall._normalize_insulation(d.get("basement_wall_insulation_type", "rigid")),
+            basement_wall_insulation_r_value=d.get("basement_wall_insulation_r_value", 0.0),
+            basement_wall_insulation_location=d.get("basement_wall_insulation_location", "interior"),
+            basement_wall_area=d.get("basement_wall_area", 0.0),
+            basement_wall_above_grade_area=d.get("basement_wall_above_grade_area", 0.0),
+            basement_wall_below_grade_area=d.get("basement_wall_below_grade_area", 0.0),
+            rim_joist_insulation=d.get("rim_joist_insulation", False),
+            rim_joist_insulation_type=Wall._normalize_insulation(d.get("rim_joist_insulation_type", "spray_foam_closed")),
+            rim_joist_insulation_r_value=d.get("rim_joist_insulation_r_value", 0.0),
+            rim_joist_perimeter=d.get("rim_joist_perimeter", 0.0),
+            rim_joist_height=d.get("rim_joist_height", 9.25),
+            knee_wall_insulation=d.get("knee_wall_insulation", False),
+            knee_wall_insulation_type=Wall._normalize_insulation(d.get("knee_wall_insulation_type", "batt")),
+            knee_wall_insulation_r_value=d.get("knee_wall_insulation_r_value", 0.0),
+            knee_wall_area=d.get("knee_wall_area", 0.0),
+            floor_over_unconditioned=d.get("floor_over_unconditioned", False),
+            floor_over_unconditioned_type=Wall._normalize_insulation(d.get("floor_over_unconditioned_type", "batt")),
+            floor_over_unconditioned_r_value=d.get("floor_over_unconditioned_r_value", 0.0),
+            floor_over_unconditioned_area=d.get("floor_over_unconditioned_area", 0.0),
+            floor_over_unconditioned_support=d.get("floor_over_unconditioned_support", "wire"),
+            floor_over_unconditioned_joist_size=d.get("floor_over_unconditioned_joist_size", "2x10"),
+            garage_ceiling_insulation=d.get("garage_ceiling_insulation", False),
+            garage_ceiling_insulation_type=Wall._normalize_insulation(d.get("garage_ceiling_insulation_type", "batt")),
+            garage_ceiling_insulation_r_value=d.get("garage_ceiling_insulation_r_value", 0.0),
+            garage_ceiling_area=d.get("garage_ceiling_area", 0.0),
+            garage_wall_insulation=d.get("garage_wall_insulation", False),
+            garage_wall_insulation_type=Wall._normalize_insulation(d.get("garage_wall_insulation_type", "batt")),
+            garage_wall_insulation_r_value=d.get("garage_wall_insulation_r_value", 0.0),
+            garage_wall_area=d.get("garage_wall_area", 0.0),
+            attic_baffles=d.get("attic_baffles", False),
+            attic_baffle_count=d.get("attic_baffle_count", 0),
+            attic_hatch_insulation=d.get("attic_hatch_insulation", False),
+            attic_hatch_count=d.get("attic_hatch_count", 1),
             scale=d.get("scale", ""),
             notes=d.get("notes", []),
         )

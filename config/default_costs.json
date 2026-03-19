@@ -85,7 +85,14 @@
     "air_seal_foam_can": { "unit": "can", "cost": 6.50 },
     "air_seal_caulk": { "unit": "tube", "cost": 5.50 },
     "rigid_crawlspace_r10": { "unit": "sheet_4x8", "cost": 38.00 },
-    "cap_staples_box": { "unit": "box", "cost": 15.00 }
+    "rigid_eps_1in": { "unit": "sheet_4x8", "cost": 18.00 },
+    "rigid_eps_2in": { "unit": "sheet_4x8", "cost": 30.00 },
+    "insulation_support_wire": { "unit": "roll", "cost": 45.00, "coverage_note": "~300 sf" },
+    "insulation_support_netting": { "unit": "roll", "cost": 65.00, "coverage_note": "~250 sf" },
+    "attic_baffle": { "unit": "ea", "cost": 1.50 },
+    "attic_hatch_cover": { "unit": "ea", "cost": 35.00 },
+    "cap_staples_box": { "unit": "box", "cost": 15.00 },
+    "house_wrap_tape": { "unit": "roll", "cost": 12.00 }
   },
   "drywall": {
     "drywall_1_2_4x8": { "unit": "sheet", "cost": 14.50 },

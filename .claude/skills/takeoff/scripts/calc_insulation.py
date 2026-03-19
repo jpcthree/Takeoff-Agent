@@ -364,4 +364,291 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 0, rate,
             ))
 
+    # ── Continuous Insulation (ci) on Exterior Walls ─────────────────
+    ci_groups = defaultdict(lambda: {"area": 0.0})
+
+    for wall in building.walls:
+        if not wall.is_exterior:
+            continue
+        ci_type = getattr(wall, "continuous_insulation_type", "")
+        ci_r = getattr(wall, "continuous_insulation_r_value", 0.0)
+        if not ci_type or ci_r <= 0:
+            continue
+        net = wall.net_area_sqft(building.openings)
+        if net <= 0:
+            continue
+        key = (wall.floor, ci_type, ci_r)
+        ci_groups[key]["area"] += net
+
+    for (floor_num, ci_type, ci_r), data in sorted(ci_groups.items()):
+        net = data["area"]
+        floor_label = f"Floor {floor_num}" if building.stories > 1 else "Exterior Walls"
+        ci_label = ci_type.replace("_", " ").replace("rigid ", "")
+        sf = round(net * WASTE_RIGID, 2)
+        # Map ci type to cost key
+        ci_cost_map = {
+            "rigid_xps": "rigid_xps_1in", "rigid_polyiso": "rigid_polyiso_1in",
+            "rigid_eps": "rigid_eps_1in", "mineral_wool": "mineral_wool_r15_2x4",
+        }
+        cost_key = ci_cost_map.get(ci_type, "rigid_xps_1in")
+        items.append(_item(
+            "Continuous Insulation",
+            f"{floor_label} - R-{int(ci_r)} {ci_label} continuous insulation (ci)",
+            sf, "sf", _lookup_cost(costs, "insulation", cost_key, 1.50),
+            net * 0.03, rate,
+        ))
+
+    # ── Slab Edge Insulation ──────────────────────────────────────────
+    if getattr(building, "slab_edge_insulation", False):
+        perim = getattr(building, "slab_edge_perimeter", 0.0)
+        if perim <= 0:
+            perim = building.foundation.perimeter
+        slab_r = getattr(building, "slab_edge_insulation_r_value", 10.0)
+        slab_depth = getattr(building, "slab_edge_insulation_depth", 2.0)  # feet
+        slab_type = getattr(building, "slab_edge_insulation_type", "xps")
+        if perim > 0:
+            sf = round(perim * slab_depth * WASTE_RIGID, 2)
+            cost_key = "rigid_xps_2in" if slab_r >= 10 else "rigid_xps_1in"
+            items.append(_item(
+                "Slab Insulation",
+                f"Slab edge - R-{int(slab_r)} {slab_type.upper()} ({slab_depth:.0f}' depth)",
+                sf, "sf", _lookup_cost(costs, "insulation", cost_key, 1.50),
+                perim * 0.05, rate,
+            ))
+
+    # ── Under-Slab Insulation ─────────────────────────────────────────
+    if getattr(building, "under_slab_insulation", False):
+        us_area = getattr(building, "under_slab_insulation_area", 0.0)
+        if us_area <= 0:
+            us_area = building.foundation.area
+        us_r = getattr(building, "under_slab_insulation_r_value", 10.0)
+        us_type = getattr(building, "under_slab_insulation_type", "xps")
+        if us_area > 0:
+            sf = round(us_area * WASTE_RIGID, 2)
+            items.append(_item(
+                "Slab Insulation",
+                f"Under-slab - R-{int(us_r)} {us_type.upper()} rigid foam",
+                sf, "sf", _lookup_cost(costs, "insulation", "rigid_xps_2in", 1.50),
+                us_area * 0.01, rate,
+            ))
+
+    # ── Basement Wall Insulation ──────────────────────────────────────
+    if getattr(building, "basement_wall_insulation", False):
+        bw_area = getattr(building, "basement_wall_area", 0.0)
+        bw_type = getattr(building, "basement_wall_insulation_type", "rigid")
+        bw_r = getattr(building, "basement_wall_insulation_r_value", 10.0)
+        bw_loc = getattr(building, "basement_wall_insulation_location", "interior")
+        if bw_area > 0:
+            if bw_type == "rigid":
+                sf = round(bw_area * WASTE_RIGID, 2)
+                items.append(_item(
+                    "Basement Insulation",
+                    f"Basement wall ({bw_loc}) - R-{int(bw_r)} rigid foam",
+                    sf, "sf", _lookup_cost(costs, "insulation", "rigid_crawlspace_r10", 1.50),
+                    bw_area * 0.03, rate,
+                ))
+            elif bw_type == "spray_foam_closed":
+                depth_in = _spray_foam_depth(bw_r, is_open=False)
+                sf_w = math.ceil(bw_area * WASTE_SPRAY)
+                bf = round(sf_w * depth_in, 2)
+                items.append(_item(
+                    "Basement Insulation",
+                    f'Basement wall ({bw_loc}) - R-{int(bw_r)} closed-cell spray foam ({depth_in:.1f}")',
+                    bf, "bf", _lookup_cost(costs, "insulation", "spray_foam_closed_cell"),
+                    bw_area * 0.05, rate,
+                ))
+            elif bw_type == "batt":
+                sf = round(bw_area * WASTE_BATT, 2)
+                items.append(_item(
+                    "Basement Insulation",
+                    f"Basement wall ({bw_loc}) - R-{int(bw_r)} fiberglass batt",
+                    sf, "sf", _lookup_cost(costs, "insulation", "batt_r13_2x4_15in"),
+                    bw_area * 0.02, rate,
+                ))
+
+    # ── Rim/Band Joist Insulation ─────────────────────────────────────
+    if getattr(building, "rim_joist_insulation", False):
+        rj_perim = getattr(building, "rim_joist_perimeter", 0.0)
+        if rj_perim <= 0:
+            rj_perim = building.foundation.perimeter
+        rj_height_in = getattr(building, "rim_joist_height", 9.25)
+        rj_type = getattr(building, "rim_joist_insulation_type", "spray_foam_closed")
+        rj_r = getattr(building, "rim_joist_insulation_r_value", 14.0)
+        rj_area = rj_perim * (rj_height_in / 12.0) * building.stories
+        if rj_area > 0:
+            if "spray" in rj_type:
+                is_open = "open" in rj_type
+                depth_in = _spray_foam_depth(rj_r, is_open)
+                sf_w = math.ceil(rj_area * WASTE_SPRAY)
+                bf = round(sf_w * depth_in, 2)
+                label = "open-cell" if is_open else "closed-cell"
+                cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
+                items.append(_item(
+                    "Rim Joist Insulation",
+                    f'Rim/band joist - R-{int(rj_r)} {label} spray foam ({depth_in:.1f}")',
+                    bf, "bf", _lookup_cost(costs, "insulation", cost_key),
+                    rj_area * 0.06, rate,
+                ))
+            elif rj_type == "rigid":
+                sf = round(rj_area * WASTE_RIGID, 2)
+                items.append(_item(
+                    "Rim Joist Insulation",
+                    f"Rim/band joist - R-{int(rj_r)} rigid foam cut-and-cobble",
+                    sf, "sf", _lookup_cost(costs, "insulation", "rigid_xps_2in", 1.50),
+                    rj_area * 0.08, rate,
+                ))
+            elif rj_type == "batt":
+                sf = round(rj_area * WASTE_BATT, 2)
+                items.append(_item(
+                    "Rim Joist Insulation",
+                    f"Rim/band joist - R-{int(rj_r)} fiberglass batt",
+                    sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(rj_r, "2x10")),
+                    rj_area * 0.04, rate,
+                ))
+
+    # ── Knee Wall Insulation ──────────────────────────────────────────
+    if getattr(building, "knee_wall_insulation", False):
+        kw_area = getattr(building, "knee_wall_area", 0.0)
+        kw_type = getattr(building, "knee_wall_insulation_type", "batt")
+        kw_r = getattr(building, "knee_wall_insulation_r_value", 13.0)
+        if kw_area > 0:
+            if kw_type == "batt":
+                sf = round(kw_area * WASTE_BATT, 2)
+                items.append(_item(
+                    "Knee Wall Insulation",
+                    f"Knee walls - R-{int(kw_r)} fiberglass batt",
+                    sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(kw_r, "2x4")),
+                    kw_area * 0.025, rate,
+                ))
+            elif "spray" in kw_type:
+                is_open = "open" in kw_type
+                depth_in = _spray_foam_depth(kw_r, is_open)
+                sf_w = math.ceil(kw_area * WASTE_SPRAY)
+                bf = round(sf_w * depth_in, 2)
+                label = "open-cell" if is_open else "closed-cell"
+                cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
+                items.append(_item(
+                    "Knee Wall Insulation",
+                    f'Knee walls - R-{int(kw_r)} {label} spray foam ({depth_in:.1f}")',
+                    bf, "bf", _lookup_cost(costs, "insulation", cost_key),
+                    kw_area * 0.04, rate,
+                ))
+
+    # ── Floor Over Unconditioned Space ────────────────────────────────
+    if getattr(building, "floor_over_unconditioned", False):
+        fu_area = getattr(building, "floor_over_unconditioned_area", 0.0)
+        fu_type = getattr(building, "floor_over_unconditioned_type", "batt")
+        fu_r = getattr(building, "floor_over_unconditioned_r_value", 19.0)
+        fu_support = getattr(building, "floor_over_unconditioned_support", "wire")
+        fu_joist = getattr(building, "floor_over_unconditioned_joist_size", "2x10")
+        if fu_area > 0:
+            if fu_type == "batt":
+                sf = round(fu_area * WASTE_BATT, 2)
+                cost_key = _batt_cost_key(fu_r, fu_joist)
+                items.append(_item(
+                    "Floor Insulation",
+                    f"Floor over unconditioned - R-{int(fu_r)} fiberglass batt ({fu_joist} joists)",
+                    sf, "sf", _lookup_cost(costs, "insulation", cost_key),
+                    fu_area * 0.025, rate,
+                ))
+            elif "spray" in fu_type:
+                is_open = "open" in fu_type
+                depth_in = _spray_foam_depth(fu_r, is_open)
+                sf_w = math.ceil(fu_area * WASTE_SPRAY)
+                bf = round(sf_w * depth_in, 2)
+                label = "open-cell" if is_open else "closed-cell"
+                cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
+                items.append(_item(
+                    "Floor Insulation",
+                    f'Floor over unconditioned - R-{int(fu_r)} {label} spray foam ({depth_in:.1f}")',
+                    bf, "bf", _lookup_cost(costs, "insulation", cost_key),
+                    fu_area * 0.04, rate,
+                ))
+            elif fu_type == "blown":
+                sf = round(fu_area * WASTE_BLOWN, 2)
+                items.append(_item(
+                    "Floor Insulation",
+                    f"Floor over unconditioned - R-{int(fu_r)} blown insulation",
+                    sf, "sf", _lookup_cost(costs, "insulation", "blown_cellulose", 0.80),
+                    fu_area * 0.02, rate,
+                ))
+            # Support material (wire hangers or netting)
+            if fu_support in ("wire", "netting"):
+                support_sf = round(fu_area * 1.05, 2)
+                cost_key = f"insulation_support_{fu_support}"
+                items.append(_item(
+                    "Floor Insulation",
+                    f"Insulation support - {fu_support} (floor over unconditioned)",
+                    support_sf, "sf", _lookup_cost(costs, "insulation", cost_key, 0.15),
+                    fu_area * 0.005, rate,
+                ))
+
+    # ── Garage Ceiling Insulation ─────────────────────────────────────
+    if getattr(building, "garage_ceiling_insulation", False):
+        gc_area = getattr(building, "garage_ceiling_area", 0.0)
+        gc_type = getattr(building, "garage_ceiling_insulation_type", "batt")
+        gc_r = getattr(building, "garage_ceiling_insulation_r_value", 30.0)
+        if gc_area > 0:
+            if gc_type == "batt":
+                sf = round(gc_area * WASTE_BATT, 2)
+                items.append(_item(
+                    "Garage Insulation",
+                    f"Garage ceiling - R-{int(gc_r)} fiberglass batt (living space above)",
+                    sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(gc_r, "2x10")),
+                    gc_area * 0.025, rate,
+                ))
+            elif "spray" in gc_type:
+                is_open = "open" in gc_type
+                depth_in = _spray_foam_depth(gc_r, is_open)
+                sf_w = math.ceil(gc_area * WASTE_SPRAY)
+                bf = round(sf_w * depth_in, 2)
+                label = "open-cell" if is_open else "closed-cell"
+                cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
+                items.append(_item(
+                    "Garage Insulation",
+                    f'Garage ceiling - R-{int(gc_r)} {label} spray foam ({depth_in:.1f}")',
+                    bf, "bf", _lookup_cost(costs, "insulation", cost_key),
+                    gc_area * 0.04, rate,
+                ))
+
+    # ── Garage Wall Insulation ────────────────────────────────────────
+    if getattr(building, "garage_wall_insulation", False):
+        gw_area = getattr(building, "garage_wall_area", 0.0)
+        gw_type = getattr(building, "garage_wall_insulation_type", "batt")
+        gw_r = getattr(building, "garage_wall_insulation_r_value", 13.0)
+        if gw_area > 0:
+            sf = round(gw_area * WASTE_BATT, 2)
+            items.append(_item(
+                "Garage Insulation",
+                f"Garage-to-living wall - R-{int(gw_r)} fiberglass batt",
+                sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(gw_r, "2x4")),
+                gw_area * 0.02, rate,
+            ))
+
+    # ── Attic Baffles ─────────────────────────────────────────────────
+    if getattr(building, "attic_baffles", False):
+        baffle_count = getattr(building, "attic_baffle_count", 0)
+        if baffle_count <= 0 and building.attic_area > 0:
+            # Estimate: 1 baffle per ~2 LF of eave at 16" OC spacing
+            baffle_count = math.ceil(building.eave_perimeter * 0.75)
+        if baffle_count > 0:
+            items.append(_item(
+                "Attic Insulation",
+                "Attic ventilation baffles (rafter bays)",
+                baffle_count, "ea",
+                _lookup_cost(costs, "insulation", "attic_baffle", 1.50),
+                baffle_count * 0.05, rate,
+            ))
+
+    # ── Attic Hatch Insulation ────────────────────────────────────────
+    if getattr(building, "attic_hatch_insulation", False):
+        hatch_count = getattr(building, "attic_hatch_count", 1)
+        items.append(_item(
+            "Attic Insulation",
+            "Attic hatch/access insulation cover",
+            hatch_count, "ea",
+            _lookup_cost(costs, "insulation", "attic_hatch_cover", 35.00),
+            hatch_count * 0.25, rate,
+        ))
+
     return items
