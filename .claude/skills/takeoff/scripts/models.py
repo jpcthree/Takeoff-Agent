@@ -284,7 +284,9 @@ class Wall:
     sound_insulation_type: str = ""  # "fiberglass_batt", "mineral_wool"
     sound_insulation_r_value: float = 0.0
     # Drywall type override (explicit per-wall control)
-    drywall_type: str = ""  # "standard_1_2", "moisture_resistant", "fire_rated_5_8", "cement_board", "mold_resistant"
+    drywall_type: str = ""  # "standard_1_2", "moisture_resistant", "fire_rated_5_8", "cement_board", "mold_resistant", "abuse_resistant", "shaftliner", "type_c"
+    drywall_layers: int = 1        # number of layers per face (1 or 2)
+    drywall_finish_level: int = 4  # GA-214 finish level: 0-5
 
     @property
     def gross_area_sqft(self) -> float:
@@ -326,6 +328,8 @@ class Wall:
             "sound_insulation_type": self.sound_insulation_type,
             "sound_insulation_r_value": self.sound_insulation_r_value,
             "drywall_type": self.drywall_type,
+            "drywall_layers": self.drywall_layers,
+            "drywall_finish_level": self.drywall_finish_level,
         }
 
     # Map common Claude-output insulation type strings to canonical values
@@ -366,6 +370,8 @@ class Wall:
             sound_insulation_type=d.get("sound_insulation_type", ""),
             sound_insulation_r_value=d.get("sound_insulation_r_value", 0.0),
             drywall_type=d.get("drywall_type", ""),
+            drywall_layers=d.get("drywall_layers", 1),
+            drywall_finish_level=d.get("drywall_finish_level", 4),
         )
 
 
@@ -393,6 +399,10 @@ class Room:
     paint_walls: str = "latex"
     paint_ceiling: str = "latex"
     paint_finish: str = "eggshell"
+    # Ceiling drywall overrides
+    ceiling_drywall_type: str = ""        # "standard_1_2", "fire_rated_5_8", etc.
+    ceiling_drywall_layers: int = 1
+    ceiling_finish_level: int = 4         # GA-214: 0-5
 
     @property
     def floor_area_sqft(self) -> float:
@@ -427,6 +437,9 @@ class Room:
             "trim_casing": self.trim_casing,
             "paint_walls": self.paint_walls, "paint_ceiling": self.paint_ceiling,
             "paint_finish": self.paint_finish,
+            "ceiling_drywall_type": self.ceiling_drywall_type,
+            "ceiling_drywall_layers": self.ceiling_drywall_layers,
+            "ceiling_finish_level": self.ceiling_finish_level,
         }
 
     @classmethod
@@ -449,6 +462,9 @@ class Room:
             paint_walls=d.get("paint_walls", "latex"),
             paint_ceiling=d.get("paint_ceiling", "latex"),
             paint_finish=d.get("paint_finish", "eggshell"),
+            ceiling_drywall_type=d.get("ceiling_drywall_type", ""),
+            ceiling_drywall_layers=d.get("ceiling_drywall_layers", 1),
+            ceiling_finish_level=d.get("ceiling_finish_level", 4),
         )
 
 
@@ -468,6 +484,9 @@ class RoofSection:
     valley_length: float = 0.0
     eave_length: float = 0.0
     rake_length: float = 0.0
+    # Roofing material details
+    underlayment_type: str = "synthetic"  # "synthetic", "felt_15", "felt_30", "high_temp"
+    shingle_type: str = "architectural"   # "architectural", "3_tab", "designer"
 
     @property
     def slope_factor(self) -> float:
@@ -486,6 +505,8 @@ class RoofSection:
             "ridge_length": self.ridge_length, "hip_length": self.hip_length,
             "valley_length": self.valley_length, "eave_length": self.eave_length,
             "rake_length": self.rake_length,
+            "underlayment_type": self.underlayment_type,
+            "shingle_type": self.shingle_type,
         }
 
     @staticmethod
@@ -525,6 +546,8 @@ class RoofSection:
             valley_length=tf(d.get("valley_length", 0.0)),
             eave_length=tf(d.get("eave_length", 0.0)),
             rake_length=tf(d.get("rake_length", 0.0)),
+            underlayment_type=d.get("underlayment_type", "synthetic"),
+            shingle_type=d.get("shingle_type", "architectural"),
         )
 
 
@@ -927,6 +950,10 @@ class GutterRun:
     downspout_size: str = "2x3"  # "2x3", "3x4", "4_round", "4x5", "box"
     downspout_material: str = ""  # defaults to match gutter material if empty
     downspout_color: str = ""  # defaults to match gutter color if empty
+    # Accessories
+    gutter_guard: bool = False
+    gutter_guard_type: str = "screen"  # "screen", "micro_mesh", "foam", "brush"
+    end_caps: int = 2  # per run (left + right)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -948,6 +975,9 @@ class GutterRun:
             downspout_size=d.get("downspout_size", "2x3"),
             downspout_material=d.get("downspout_material", ""),
             downspout_color=d.get("downspout_color", ""),
+            gutter_guard=d.get("gutter_guard", False),
+            gutter_guard_type=d.get("gutter_guard_type", "screen"),
+            end_caps=d.get("end_caps", 2),
         )
 
 
@@ -1070,6 +1100,20 @@ class BuildingModel:
     garage_wall_insulation_type: str = "batt"
     garage_wall_insulation_r_value: float = 0.0
     garage_wall_area: float = 0.0  # sf (shared walls with conditioned space)
+
+    # Roofing accessories & penetrations
+    chimney_count: int = 0
+    skylight_count: int = 0
+    pipe_boot_count: int = 3  # default estimate
+    soffit_vent_count: int = 0
+    power_vent_count: int = 0
+    step_flashing_lf: float = 0.0
+    counter_flashing_lf: float = 0.0
+    roof_complexity: str = "standard"  # "simple", "standard", "complex", "very_complex"
+
+    # Drywall accessories
+    access_panel_count: int = 0
+    l_bead_lf: float = 0.0  # J-bead/L-bead linear feet
 
     # Attic details (Assembly B)
     attic_baffles: bool = False
@@ -1224,6 +1268,16 @@ class BuildingModel:
             "garage_wall_insulation_type": self.garage_wall_insulation_type,
             "garage_wall_insulation_r_value": self.garage_wall_insulation_r_value,
             "garage_wall_area": self.garage_wall_area,
+            "chimney_count": self.chimney_count,
+            "skylight_count": self.skylight_count,
+            "pipe_boot_count": self.pipe_boot_count,
+            "soffit_vent_count": self.soffit_vent_count,
+            "power_vent_count": self.power_vent_count,
+            "step_flashing_lf": self.step_flashing_lf,
+            "counter_flashing_lf": self.counter_flashing_lf,
+            "roof_complexity": self.roof_complexity,
+            "access_panel_count": self.access_panel_count,
+            "l_bead_lf": self.l_bead_lf,
             "attic_baffles": self.attic_baffles,
             "attic_baffle_count": self.attic_baffle_count,
             "attic_hatch_insulation": self.attic_hatch_insulation,
@@ -1333,6 +1387,16 @@ class BuildingModel:
             garage_wall_insulation_type=Wall._normalize_insulation(d.get("garage_wall_insulation_type", "batt")),
             garage_wall_insulation_r_value=d.get("garage_wall_insulation_r_value", 0.0),
             garage_wall_area=d.get("garage_wall_area", 0.0),
+            chimney_count=d.get("chimney_count", 0),
+            skylight_count=d.get("skylight_count", 0),
+            pipe_boot_count=d.get("pipe_boot_count", 3),
+            soffit_vent_count=d.get("soffit_vent_count", 0),
+            power_vent_count=d.get("power_vent_count", 0),
+            step_flashing_lf=d.get("step_flashing_lf", 0.0),
+            counter_flashing_lf=d.get("counter_flashing_lf", 0.0),
+            roof_complexity=d.get("roof_complexity", "standard"),
+            access_panel_count=d.get("access_panel_count", 0),
+            l_bead_lf=d.get("l_bead_lf", 0.0),
             attic_baffles=d.get("attic_baffles", False),
             attic_baffle_count=d.get("attic_baffle_count", 0),
             attic_hatch_insulation=d.get("attic_hatch_insulation", False),

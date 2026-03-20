@@ -3,7 +3,18 @@ Drywall Trade Calculator
 
 Calculates drywall sheets (per floor, per type), finishing materials,
 texture, and drywall primer. Supports standard, moisture-resistant,
-fire-rated, cement board, and mold-resistant drywall types.
+fire-rated, cement board, mold-resistant, abuse-resistant, shaftliner,
+and Type C drywall types.
+
+Enhanced per Drywall Scope Analysis Guide:
+- Multi-layer assemblies (drywall_layers per wall/ceiling)
+- GA-214 finish levels (L0-L5) with labor multipliers
+- Setting compound for fire-rated assemblies
+- Drywall adhesive for multi-layer assemblies
+- L-bead/J-bead at dissimilar material transitions
+- Access panels
+- High-ceiling labor surcharge (>10ft)
+- Corner bead types (metal 90° and bullnose)
 """
 
 from __future__ import annotations
@@ -14,7 +25,18 @@ from models import BuildingModel, LineItem
 
 WASTE_SHEETS = 1.10
 WASTE_FINISH = 1.10
-SQFT_PER_SHEET = 32.0  # 4x8
+SQFT_PER_SHEET_4x8 = 32.0
+SQFT_PER_SHEET_4x10 = 40.0
+
+# GA-214 finish level labor multipliers (L4 = 1.0 baseline)
+FINISH_LEVEL_MULTIPLIERS = {
+    0: 0.0,   # L0 — no finishing (concealed areas)
+    1: 0.3,   # L1 — fire-rated only, no taping visible
+    2: 0.5,   # L2 — tile substrate, concealed areas
+    3: 0.7,   # L3 — medium texture, no smooth finish
+    4: 1.0,   # L4 — standard smooth/light texture (baseline)
+    5: 1.5,   # L5 — skim coat, highest quality
+}
 
 
 # Drywall type display labels
@@ -24,6 +46,9 @@ DW_LABELS = {
     "fire_rated_5_8": '5/8" fire-rated (Type X)',
     "cement_board": '1/2" cement board (wet areas)',
     "mold_resistant": '1/2" mold-resistant',
+    "abuse_resistant": '1/2" abuse-resistant (high traffic)',
+    "shaftliner": '1" shaftliner (shaft walls)',
+    "type_c": '5/8" Type C (enhanced fire)',
 }
 
 # Drywall type cost keys (in default_costs.json)
@@ -33,7 +58,18 @@ DW_COST_KEYS = {
     "fire_rated_5_8": "drywall_5_8_4x8",
     "cement_board": "cement_board_1_2_3x5",
     "mold_resistant": "mold_resistant_1_2_4x8",
+    "abuse_resistant": "abuse_resistant_1_2_4x8",
+    "shaftliner": "shaftliner_1in_4x8",
+    "type_c": "type_c_5_8_4x8",
 }
+
+# Sheet SF by drywall type (most are 4x8=32, cement board is 3x5=15)
+DW_SHEET_SF = {
+    "cement_board": 15.0,
+}
+
+# Fire-rated drywall types that need setting compound
+FIRE_RATED_TYPES = {"fire_rated_5_8", "type_c", "shaftliner"}
 
 
 def _lookup_cost(costs: dict, section: str, key: str, fallback: float = 0.0) -> float:
@@ -52,6 +88,11 @@ def _item(category, desc, qty, unit, unit_cost, labor_hrs, labor_rate) -> LineIt
     )
     li.calculate_totals()
     return li
+
+
+def _sheet_sf(dw_type: str) -> float:
+    """Return square footage per sheet for a drywall type."""
+    return DW_SHEET_SF.get(dw_type, SQFT_PER_SHEET_4x8)
 
 
 def _resolve_wall_dw_type(wall, room_map: dict) -> str:
@@ -85,12 +126,29 @@ def _resolve_wall_dw_type(wall, room_map: dict) -> str:
 
 
 def _resolve_ceiling_dw_type(room) -> str:
-    """Determine ceiling drywall type for a room."""
+    """Determine ceiling drywall type for a room.
+
+    Priority:
+    1. Explicit room.ceiling_drywall_type if set
+    2. Room-based inference (garage → fire-rated, bathroom → moisture-resistant)
+    3. Default: standard_1_2
+    """
+    # 1. Explicit override from model
+    ceiling_type = getattr(room, "ceiling_drywall_type", "")
+    if ceiling_type:
+        return ceiling_type
+
+    # 2. Room-based inference
     if room.is_garage:
         return "fire_rated_5_8"
     if room.is_bathroom:
         return "moisture_resistant"
     return "standard_1_2"
+
+
+def _get_finish_level(obj, attr: str = "drywall_finish_level") -> int:
+    """Get finish level with fallback to L4 (standard)."""
+    return getattr(obj, attr, 4)
 
 
 def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
@@ -103,8 +161,19 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
     for room in building.rooms:
         room_map[getattr(room, "id", id(room))] = room
 
+    # Track totals for finishing calculations
+    total_wall_sheets = 0
+    total_ceiling_sheets = 0
+    total_wall_area = 0.0
+    total_ceiling_area = 0.0
+    fire_rated_sheets = 0
+    multi_layer_sheets = 0
+    finish_level_areas = defaultdict(float)  # level → SF (for weighted labor)
+    high_ceiling_area = 0.0  # SF of walls/ceilings >10ft
+
     # ── Wall Drywall (grouped by floor + type) ──────────────────────────
-    wall_areas = defaultdict(float)  # (floor, dw_type) → SF
+    # Key: (floor, dw_type) → {area, layers, finish_level}
+    wall_groups = defaultdict(lambda: {"area": 0.0, "layers": 1, "finish_level": 4})
 
     for wall in building.walls:
         if wall.interior_finish != "drywall":
@@ -114,71 +183,123 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
             continue
 
         dw_type = _resolve_wall_dw_type(wall, room_map)
+        layers = getattr(wall, "drywall_layers", 1)
+        finish_level = _get_finish_level(wall)
 
         if wall.is_exterior:
             sides = 1  # interior face only
         else:
             sides = 2  # both sides
 
-        wall_areas[(wall.floor, dw_type)] += net * sides
+        wall_sf = net * sides
+        key = (wall.floor, dw_type)
+        wall_groups[key]["area"] += wall_sf
+        wall_groups[key]["layers"] = max(wall_groups[key]["layers"], layers)
+        wall_groups[key]["finish_level"] = finish_level
 
-    for (floor_num, dw_type), area in sorted(wall_areas.items()):
+        # Track high-ceiling areas
+        wall_height = wall.height.total_feet if hasattr(wall.height, "total_feet") else 9.0
+        if wall_height > 10.0:
+            high_ceiling_area += wall_sf
+
+    for (floor_num, dw_type), info in sorted(wall_groups.items()):
+        area = info["area"]
+        layers = info["layers"]
+        finish_level = info["finish_level"]
         if area <= 0:
             continue
+
         floor_label = f"Floor {floor_num}" if building.stories > 1 else "Walls"
+        sheet_sf = _sheet_sf(dw_type)
+        sheets_per_layer = math.ceil(area / sheet_sf * WASTE_SHEETS)
+        total_sheets = sheets_per_layer * layers
         sf_with_waste = round(area * WASTE_SHEETS, 2)
-        sheets = math.ceil(area / SQFT_PER_SHEET * WASTE_SHEETS)
         label = DW_LABELS.get(dw_type, dw_type)
         cost_key = DW_COST_KEYS.get(dw_type, "drywall_1_2_4x8")
-        cost_per_sf = _lookup_cost(costs, "drywall", cost_key) / SQFT_PER_SHEET
+        cost_per_sf = _lookup_cost(costs, "drywall", cost_key) / sheet_sf
 
+        layer_note = f" ({layers} layers)" if layers > 1 else ""
         items.append(_item(
             "Drywall Sheets",
-            f"{floor_label} - {label} ({sheets} sheets)",
-            sf_with_waste, "sf",
+            f"{floor_label} - {label} ({total_sheets} sheets{layer_note})",
+            sf_with_waste * layers, "sf",
             cost_per_sf,
-            sheets * 0.05, rate,
+            total_sheets * 0.05, rate,
         ))
 
+        total_wall_sheets += total_sheets
+        total_wall_area += area
+        finish_level_areas[finish_level] += area
+
+        if dw_type in FIRE_RATED_TYPES:
+            fire_rated_sheets += total_sheets
+        if layers > 1:
+            multi_layer_sheets += total_sheets
+
     # ── Ceiling Drywall (grouped by floor + type) ───────────────────────
-    ceiling_areas = defaultdict(float)
+    ceiling_groups = defaultdict(lambda: {"area": 0.0, "layers": 1, "finish_level": 4})
 
     for room in building.rooms:
         ceil_area = room.ceiling_area_sqft
         if ceil_area <= 0:
             continue
         dw_type = _resolve_ceiling_dw_type(room)
-        ceiling_areas[(room.floor, dw_type)] += ceil_area
+        layers = getattr(room, "ceiling_drywall_layers", 1)
+        finish_level = getattr(room, "ceiling_finish_level", 4)
 
-    for (floor_num, dw_type), area in sorted(ceiling_areas.items()):
+        key = (room.floor, dw_type)
+        ceiling_groups[key]["area"] += ceil_area
+        ceiling_groups[key]["layers"] = max(ceiling_groups[key]["layers"], layers)
+        ceiling_groups[key]["finish_level"] = finish_level
+
+        # Track high-ceiling areas for rooms
+        ceil_height = room.ceiling_height.total_feet if hasattr(room.ceiling_height, "total_feet") else 9.0
+        if ceil_height > 10.0:
+            high_ceiling_area += ceil_area
+
+    for (floor_num, dw_type), info in sorted(ceiling_groups.items()):
+        area = info["area"]
+        layers = info["layers"]
+        finish_level = info["finish_level"]
         if area <= 0:
             continue
+
         floor_label = f"Floor {floor_num}" if building.stories > 1 else "Ceilings"
+        sheet_sf = _sheet_sf(dw_type)
+        sheets_per_layer = math.ceil(area / sheet_sf * WASTE_SHEETS)
+        total_sheets = sheets_per_layer * layers
         sf_with_waste = round(area * WASTE_SHEETS, 2)
-        sheets = math.ceil(area / SQFT_PER_SHEET * WASTE_SHEETS)
         label = DW_LABELS.get(dw_type, dw_type)
         cost_key = DW_COST_KEYS.get(dw_type, "drywall_1_2_4x8")
-        cost_per_sf = _lookup_cost(costs, "drywall", cost_key) / SQFT_PER_SHEET
+        cost_per_sf = _lookup_cost(costs, "drywall", cost_key) / sheet_sf
 
+        layer_note = f" ({layers} layers)" if layers > 1 else ""
         items.append(_item(
             "Drywall Sheets",
-            f"{floor_label} - Ceiling - {label} ({sheets} sheets)",
-            sf_with_waste, "sf",
+            f"{floor_label} - Ceiling - {label} ({total_sheets} sheets{layer_note})",
+            sf_with_waste * layers, "sf",
             cost_per_sf,
-            sheets * 0.06, rate,  # slightly more labor for ceilings
+            total_sheets * 0.06, rate,  # slightly more labor for ceilings
         ))
 
-    # ── Calculate totals for finishing materials ─────────────────────────
-    total_wall_area = sum(wall_areas.values())
-    total_ceiling_area = sum(ceiling_areas.values())
-    total_area = total_wall_area + total_ceiling_area
-    total_sheets = math.ceil(total_area / SQFT_PER_SHEET * WASTE_SHEETS)
+        total_ceiling_sheets += total_sheets
+        total_ceiling_area += area
+        finish_level_areas[finish_level] += area
 
-    if total_sheets <= 0:
+        if dw_type in FIRE_RATED_TYPES:
+            fire_rated_sheets += total_sheets
+        if layers > 1:
+            multi_layer_sheets += total_sheets
+
+    # ── Calculate totals for finishing materials ─────────────────────────
+    all_sheets = total_wall_sheets + total_ceiling_sheets
+    total_area = total_wall_area + total_ceiling_area
+
+    if all_sheets <= 0:
         return items
 
     # ── Joint Compound ──────────────────────────────────────────────────
-    buckets = math.ceil(total_sheets / 15) * WASTE_FINISH
+    buckets = math.ceil(all_sheets / 15) * WASTE_FINISH
     items.append(_item(
         "Finishing", "Joint compound (4.5 gal bucket)",
         buckets, "bucket",
@@ -186,8 +307,18 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         buckets * 0.5, rate,
     ))
 
+    # ── Setting Compound (fire-rated assemblies) ────────────────────────
+    if fire_rated_sheets > 0:
+        bags = math.ceil(fire_rated_sheets / 20)
+        items.append(_item(
+            "Finishing", "Setting-type compound 18 lb (fire-rated joints)",
+            bags, "bag",
+            _lookup_cost(costs, "drywall", "setting_compound_18lb", 14.0),
+            bags * 0.3, rate,
+        ))
+
     # ── Paper Tape ──────────────────────────────────────────────────────
-    rolls = math.ceil(total_sheets / 15) * WASTE_FINISH
+    rolls = math.ceil(all_sheets / 15) * WASTE_FINISH
     items.append(_item(
         "Finishing", "Paper tape (500 ft roll)",
         rolls, "roll",
@@ -201,15 +332,39 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
     if building.rooms:
         avg_height = sum(r.ceiling_height.total_feet for r in building.rooms) / num_rooms
     corner_lf = num_rooms * 4 * avg_height  # ~4 corners per room
-    items.append(_item(
-        "Finishing", "Metal corner bead",
-        math.ceil(corner_lf / 8), "ea",  # 8' pieces
-        _lookup_cost(costs, "drywall", "corner_bead_8ft"),
-        corner_lf * 0.05, rate,
-    ))
+
+    # Split: 70% metal 90° for utility/wet, 30% bullnose for living areas
+    metal_pieces = math.ceil(corner_lf * 0.7 / 8)
+    bullnose_pieces = math.ceil(corner_lf * 0.3 / 8)
+
+    if metal_pieces > 0:
+        items.append(_item(
+            "Finishing", "Metal corner bead 90° (8 ft)",
+            metal_pieces, "ea",
+            _lookup_cost(costs, "drywall", "corner_bead_8ft"),
+            metal_pieces * 0.15, rate,
+        ))
+    if bullnose_pieces > 0:
+        items.append(_item(
+            "Finishing", "Bullnose corner bead (8 ft)",
+            bullnose_pieces, "ea",
+            _lookup_cost(costs, "drywall", "corner_bead_bullnose_8ft", 5.50),
+            bullnose_pieces * 0.20, rate,
+        ))
+
+    # ── L-Bead / J-Bead ────────────────────────────────────────────────
+    l_bead_lf = getattr(building, "l_bead_lf", 0.0)
+    if l_bead_lf > 0:
+        pieces = math.ceil(l_bead_lf / 10)  # 10-ft pieces
+        items.append(_item(
+            "Finishing", "L-bead / J-bead (10 ft)",
+            pieces, "ea",
+            _lookup_cost(costs, "drywall", "l_bead_10ft", 3.75),
+            pieces * 0.10, rate,
+        ))
 
     # ── Drywall Screws ──────────────────────────────────────────────────
-    screw_lbs = math.ceil(total_sheets / 3)
+    screw_lbs = math.ceil(all_sheets / 3)
     items.append(_item(
         "Fasteners", 'Drywall screws 1-1/4" (1 lb)',
         screw_lbs, "lb",
@@ -217,12 +372,44 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         0, rate,
     ))
 
-    # ── Taping/Finishing Labor ──────────────────────────────────────────
-    items.append(_item(
-        "Finishing Labor", "Taping, mudding, sanding",
-        0, "ea", 0,
-        total_area * 0.04, rate,
-    ))
+    # ── Drywall Adhesive (multi-layer assemblies) ───────────────────────
+    if multi_layer_sheets > 0:
+        tubes = math.ceil(multi_layer_sheets / 8)  # 1 tube per 8 sheets
+        items.append(_item(
+            "Fasteners", "Drywall adhesive (28 oz tube)",
+            tubes, "ea",
+            _lookup_cost(costs, "drywall", "drywall_adhesive", 4.50),
+            tubes * 0.05, rate,
+        ))
+
+    # ── Access Panels ───────────────────────────────────────────────────
+    access_count = getattr(building, "access_panel_count", 0)
+    if access_count > 0:
+        items.append(_item(
+            "Accessories", "Access panel 12x12",
+            access_count, "ea",
+            _lookup_cost(costs, "drywall", "access_panel_12x12", 18.0),
+            access_count * 0.50, rate,
+        ))
+
+    # ── Taping/Finishing Labor (scaled by GA-214 finish level) ──────────
+    # Calculate weighted finish labor from finish level areas
+    if total_area > 0:
+        weighted_labor = 0.0
+        for level, area in finish_level_areas.items():
+            multiplier = FINISH_LEVEL_MULTIPLIERS.get(level, 1.0)
+            weighted_labor += area * 0.04 * multiplier  # 0.04 hrs/sf baseline
+
+        # High-ceiling surcharge: 15% extra labor for walls/ceilings >10ft
+        if high_ceiling_area > 0:
+            high_ceiling_ratio = high_ceiling_area / total_area
+            weighted_labor *= (1.0 + 0.15 * high_ceiling_ratio)
+
+        items.append(_item(
+            "Finishing Labor", "Taping, mudding, sanding (GA-214 finish level adjusted)",
+            0, "ea", 0,
+            round(weighted_labor, 2), rate,
+        ))
 
     # ── Texture ─────────────────────────────────────────────────────────
     if total_ceiling_area > 0:

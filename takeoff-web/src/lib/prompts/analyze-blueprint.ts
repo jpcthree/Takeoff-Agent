@@ -42,7 +42,9 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
       "continuous_insulation_thickness": 0,
       "wall_designation": "W-1",
       "construction_type": "wood|metal|cmu|sip|icf",
-      "drywall_type": "standard_1_2|moisture_resistant|fire_rated_5_8|cement_board|mold_resistant",
+      "drywall_type": "standard_1_2|moisture_resistant|fire_rated_5_8|cement_board|mold_resistant|abuse_resistant|shaftliner|type_c",
+      "drywall_layers": 1,
+      "drywall_finish_level": 4,
       "sound_insulation": false,
       "openings": ["o1", "o2"]
     }
@@ -60,6 +62,9 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
       "is_kitchen": false,
       "is_garage": false,
       "floor_finish": "hardwood|tile|carpet|vinyl_plank|laminate|concrete|epoxy",
+      "ceiling_drywall_type": "standard_1_2|fire_rated_5_8|moisture_resistant|type_c",
+      "ceiling_drywall_layers": 1,
+      "ceiling_finish_level": 4,
       "walls": ["w1", "w5"]
     }
   ],
@@ -82,8 +87,25 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
     "eave_length": {"feet": 0, "inches": 0},
     "hip_length": {"feet": 0, "inches": 0},
     "valley_length": {"feet": 0, "inches": 0},
-    "has_ridge_vent": true
+    "has_ridge_vent": true,
+    "sections": [
+      {
+        "label": "Front slope",
+        "area_sf": 0,
+        "pitch": 5,
+        "underlayment_type": "synthetic|felt_15|felt_30|high_temp",
+        "shingle_type": "architectural|3_tab|designer"
+      }
+    ]
   },
+  "chimney_count": 0,
+  "skylight_count": 0,
+  "pipe_boot_count": 3,
+  "soffit_vent_count": 0,
+  "power_vent_count": 0,
+  "step_flashing_lf": 0,
+  "counter_flashing_lf": 0,
+  "roof_complexity": "simple|standard|complex|very_complex",
   "foundation": {
     "type": "slab|crawlspace|basement|pier",
     "perimeter_lf": 0,
@@ -159,9 +181,14 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
       "material": "aluminum|copper|steel|vinyl",
       "color": "white",
       "downspout_count": 1,
-      "downspout_size": "2x3|3x4"
+      "downspout_size": "2x3|3x4",
+      "gutter_guard": false,
+      "gutter_guard_type": "screen|micro_mesh|foam|brush",
+      "end_caps": 2
     }
   ],
+  "access_panel_count": 0,
+  "l_bead_lf": 0,
   "hvac": {
     "equipment_type": "furnace_and_ac|heat_pump|mini_split|boiler|none",
     "heating_btu": 0,
@@ -213,8 +240,23 @@ const ANALYSIS_RULES = `
    - **Floor over unconditioned space** (above garage, cantilevers, over crawlspace): Set floor_over_unconditioned fields with area, type, support method (wire/netting).
    - **Garage**: Set garage_ceiling_insulation if living space above (with area). Set garage_wall_insulation for shared walls with conditioned space.
    - **Climate/code**: Set climate_zone and iecc_code_edition if found on plans or energy notes.
-8. **Be conservative.** Include items you're unsure about — user can remove them.
-9. **State your assumptions** before the JSON.`;
+8. **Roofing scope must be comprehensive:**
+   - Identify each roof plane/section with area, pitch, material type (architectural, 3-tab, designer shingle, metal, membrane).
+   - Set underlayment_type per section (synthetic, felt_15, felt_30, high_temp for low-slope).
+   - Count ALL roof penetrations: chimney_count, skylight_count, pipe_boot_count.
+   - Measure step_flashing_lf (wall-to-roof intersections) and counter_flashing_lf (masonry).
+   - Count soffit_vent_count and power_vent_count from elevation/section views.
+   - Set roof_complexity: simple (basic gable), standard (gable+hip), complex (dormers/valleys), very_complex (multi-level/turrets).
+   - Document gutter system per eave: size, style, material, gutter_guard if shown, end_caps per run.
+9. **Drywall scope must be comprehensive:**
+   - Decode wall type legend for board type per GA specification. Set drywall_type to match: standard_1_2, fire_rated_5_8, moisture_resistant, abuse_resistant, shaftliner, type_c.
+   - Set drywall_layers (1 or 2) per wall from assembly details — fire-rated shafts and party walls often require 2 layers.
+   - Set drywall_finish_level per GA-214: L0 (concealed), L1 (fire-tape only), L2 (tile substrate), L3 (textured), L4 (standard smooth), L5 (skim coat).
+   - Set ceiling_drywall_type, ceiling_drywall_layers, ceiling_finish_level per room.
+   - Count access_panel_count (HVAC/plumbing access panels in drywall).
+   - Measure l_bead_lf at transitions between drywall and dissimilar materials (brick, stone, exposed beam).
+10. **Be conservative.** Include items you're unsure about — user can remove them.
+11. **State your assumptions** before the JSON.`;
 
 // ---------------------------------------------------------------------------
 // Prompt 1: TEXT-PRIMARY (page has extractable text + small thumbnail)

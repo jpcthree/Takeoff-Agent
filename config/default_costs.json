@@ -110,7 +110,17 @@
     "texture_compound": { "unit": "bucket", "cost": 22.00 },
     "drywall_adhesive": { "unit": "tube", "cost": 5.75 },
     "drywall_primer_pva": { "unit": "gal", "cost": 22.00 },
-    "mold_resistant_1_2_4x8": { "unit": "sheet", "cost": 20.00 }
+    "mold_resistant_1_2_4x8": { "unit": "sheet", "cost": 20.00 },
+    "abuse_resistant_1_2_4x8": { "unit": "sheet", "cost": 24.00 },
+    "shaftliner_1in_4x8": { "unit": "sheet", "cost": 28.00 },
+    "type_c_5_8_4x8": { "unit": "sheet", "cost": 22.00 },
+    "drywall_1_2_4x10": { "unit": "sheet", "cost": 17.50 },
+    "drywall_5_8_4x10": { "unit": "sheet", "cost": 20.00 },
+    "setting_compound_18lb": { "unit": "bag", "cost": 14.00 },
+    "corner_bead_bullnose_8ft": { "unit": "ea", "cost": 5.50 },
+    "l_bead_10ft": { "unit": "ea", "cost": 3.75 },
+    "access_panel_12x12": { "unit": "ea", "cost": 18.00 },
+    "access_panel_24x24": { "unit": "ea", "cost": 32.00 }
   },
   "roofing": {
     "shingle_architectural": { "unit": "bundle", "cost": 38.00, "coverage_note": "3 bundles = 1 square (100 sf)" },
@@ -128,7 +138,14 @@
     "drip_edge": { "unit": "ea", "cost": 8.50, "coverage_note": "10 ft piece" },
     "roofing_nails": { "unit": "lb", "cost": 2.50 },
     "roof_cement": { "unit": "tube", "cost": 6.50 },
-    "soffit_vent": { "unit": "ea", "cost": 5.50 }
+    "soffit_vent": { "unit": "ea", "cost": 5.50 },
+    "shingle_designer": { "unit": "bundle", "cost": 65.00, "coverage_note": "3 bundles = 1 square (100 sf)" },
+    "flashing_counter": { "unit": "lf", "cost": 3.50 },
+    "flashing_chimney_kit": { "unit": "ea", "cost": 85.00 },
+    "flashing_skylight_kit": { "unit": "ea", "cost": 65.00 },
+    "power_vent": { "unit": "ea", "cost": 85.00 },
+    "underlayment_high_temp": { "unit": "roll", "cost": 45.00, "coverage_note": "covers ~200 sf" },
+    "flashing_step_lf": { "unit": "lf", "cost": 2.50 }
   },
   "gutters": {
     "gutter_5in_aluminum": { "unit": "lf", "cost": 3.50 },
@@ -156,7 +173,9 @@
     "downspout_strap": { "unit": "ea", "cost": 2.25 },
     "splash_block": { "unit": "ea", "cost": 8.00 },
     "gutter_sealant": { "unit": "tube", "cost": 5.50 },
-    "gutter_screen": { "unit": "lf", "cost": 1.75 }
+    "gutter_screen": { "unit": "lf", "cost": 1.75 },
+    "gutter_guard_micro_mesh": { "unit": "lf", "cost": 4.50 },
+    "expansion_joint": { "unit": "ea", "cost": 8.00 }
   },
   "hvac": {
     "furnace_80k_btu": { "unit": "ea", "cost": 2200.00 },
