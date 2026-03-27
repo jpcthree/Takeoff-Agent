@@ -37,6 +37,16 @@ def _item(category, desc, qty, unit, unit_cost, labor_hrs, labor_rate) -> LineIt
     return li
 
 
+def _rigid_per_sf(costs: dict, cost_key: str, fallback: float = 1.50, sheet_sf: float = 32.0) -> float:
+    """Convert rigid insulation sheet cost to per-SF cost.
+    Rigid insulation costs in the database are per sheet (typically 4x8=32 SF).
+    """
+    sheet_cost = _lookup_cost(costs, "insulation", cost_key, fallback)
+    if sheet_cost > 5.0:  # likely a per-sheet price, not per-SF
+        return sheet_cost / sheet_sf
+    return sheet_cost
+
+
 def _batt_cost_key(r_value: float, thickness: str) -> str:
     """Map R-value and wall thickness to the correct cost key."""
     mapping = {
@@ -273,7 +283,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(wall_area * WASTE_RIGID, 2)
                 items.append(_item(
                     "Crawlspace", f"Crawlspace wall insulation - rigid foam R-{int(cs_r)}",
-                    sf, "sf", _lookup_cost(costs, "insulation", "rigid_crawlspace_r10", 1.50),
+                    sf, "sf", _rigid_per_sf(costs, "rigid_crawlspace_r10"),
                     wall_area * 0.03, rate,
                 ))
             elif cs_type == "spray_foam_closed":
@@ -394,7 +404,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         items.append(_item(
             "Continuous Insulation",
             f"{floor_label} - R-{int(ci_r)} {ci_label} continuous insulation (ci)",
-            sf, "sf", _lookup_cost(costs, "insulation", cost_key, 1.50),
+            sf, "sf", _rigid_per_sf(costs, cost_key),
             net * 0.03, rate,
         ))
 
@@ -412,7 +422,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             items.append(_item(
                 "Slab Insulation",
                 f"Slab edge - R-{int(slab_r)} {slab_type.upper()} ({slab_depth:.0f}' depth)",
-                sf, "sf", _lookup_cost(costs, "insulation", cost_key, 1.50),
+                sf, "sf", _rigid_per_sf(costs, cost_key),
                 perim * 0.05, rate,
             ))
 
@@ -428,7 +438,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             items.append(_item(
                 "Slab Insulation",
                 f"Under-slab - R-{int(us_r)} {us_type.upper()} rigid foam",
-                sf, "sf", _lookup_cost(costs, "insulation", "rigid_xps_2in", 1.50),
+                sf, "sf", _rigid_per_sf(costs, "rigid_xps_2in"),
                 us_area * 0.01, rate,
             ))
 
@@ -444,7 +454,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 items.append(_item(
                     "Basement Insulation",
                     f"Basement wall ({bw_loc}) - R-{int(bw_r)} rigid foam",
-                    sf, "sf", _lookup_cost(costs, "insulation", "rigid_crawlspace_r10", 1.50),
+                    sf, "sf", _rigid_per_sf(costs, "rigid_crawlspace_r10"),
                     bw_area * 0.03, rate,
                 ))
             elif bw_type == "spray_foam_closed":
@@ -576,10 +586,14 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             if fu_support in ("wire", "netting"):
                 support_sf = round(fu_area * 1.05, 2)
                 cost_key = f"insulation_support_{fu_support}"
+                # Support costs are per roll (~300 SF wire, ~250 SF netting); convert to per-SF
+                roll_cost = _lookup_cost(costs, "insulation", cost_key, 0.15)
+                coverage = 300.0 if fu_support == "wire" else 250.0
+                support_per_sf = roll_cost / coverage if roll_cost > 5.0 else roll_cost
                 items.append(_item(
                     "Floor Insulation",
                     f"Insulation support - {fu_support} (floor over unconditioned)",
-                    support_sf, "sf", _lookup_cost(costs, "insulation", cost_key, 0.15),
+                    support_sf, "sf", support_per_sf,
                     fu_area * 0.005, rate,
                 ))
 

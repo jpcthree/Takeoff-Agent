@@ -183,6 +183,7 @@ def export_estimate(
     output_path: str,
     project_name: str = "",
     project_address: str = "",
+    notes: list[tuple[str, list[str]]] | None = None,
 ) -> str:
     """
     Export line items to a formatted .xlsx workbook.
@@ -192,6 +193,7 @@ def export_estimate(
         output_path: Path for the output .xlsx file.
         project_name: Optional project name for the title sheet.
         project_address: Optional address for the title sheet.
+        notes: Optional list of (section_title, [bullet_items]) to add below estimate.
 
     Returns:
         The output file path.
@@ -206,15 +208,37 @@ def export_estimate(
     for trade, items in by_trade.items():
         safe_name = trade.replace("/", "-")[:31]  # Excel sheet name limit
         ws_trade = wb.create_sheet(safe_name)
-        _build_trade_sheet(ws_trade, trade, items)
+        _build_trade_sheet(ws_trade, trade, items, notes=notes)
 
     # ---- Detail sheet (last) ----
     ws_detail = wb.create_sheet("Detail")
-    _build_detail_sheet(ws_detail, line_items)
+    _build_detail_sheet(ws_detail, line_items, notes=notes)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     wb.save(output_path)
     return output_path
+
+
+_NOTE_TITLE_FONT = Font(name="Calibri", bold=True, size=11, color="1F3864")
+_NOTE_BODY_FONT = Font(name="Calibri", size=10, color="333333")
+
+
+def _write_notes(ws, start_row: int, notes: list[tuple[str, list[str]]]) -> int:
+    """Write notes sections below the estimate table. Returns next available row."""
+    row = start_row + 2  # blank row gap
+    for section_title, bullets in notes:
+        cell = ws.cell(row=row, column=1, value=section_title)
+        cell.font = _NOTE_TITLE_FONT
+        row += 1
+        for bullet in bullets:
+            cell = ws.cell(row=row, column=1, value=f"  •  {bullet}")
+            cell.font = _NOTE_BODY_FONT
+            # Merge across columns for readability
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            row += 1
+        row += 1  # blank row between sections
+    return row
 
 
 def _group_by_trade(items: list[LineItem]) -> dict[str, list[LineItem]]:
@@ -279,7 +303,7 @@ def _build_summary_sheet(ws, items: list[LineItem], project_name: str, address: 
         _apply_cell_style(c, _GRAND_TOTAL_FONT, _GRAND_TOTAL_FILL, fmt=_CURRENCY_FMT, border=_THIN_BORDER)
 
 
-def _build_detail_sheet(ws, items: list[LineItem]):
+def _build_detail_sheet(ws, items: list[LineItem], notes: list[tuple[str, list[str]]] | None = None):
     """All line items grouped by trade on one sheet."""
     _write_header_row(ws, 1)
     row = 2
@@ -339,8 +363,13 @@ def _build_detail_sheet(ws, items: list[LineItem]):
     for col_idx in (8, 12):
         _apply_cell_style(ws.cell(row=row, column=col_idx), fill=_GRAND_TOTAL_FILL, border=_THIN_BORDER)
 
+    # Notes below the table
+    if notes:
+        _write_notes(ws, row, notes)
 
-def _build_trade_sheet(ws, trade: str, items: list[LineItem]):
+
+def _build_trade_sheet(ws, trade: str, items: list[LineItem],
+                       notes: list[tuple[str, list[str]]] | None = None):
     """Individual trade sheet with just that trade's items."""
     # Trade title
     ws.merge_cells("A1:D1")
@@ -365,3 +394,7 @@ def _build_trade_sheet(ws, trade: str, items: list[LineItem]):
     row += 1
     _write_subtotal_row(ws, row, trade.title(), mat_total, lab_total, line_total,
                         first_data_row, last_data_row)
+
+    # Notes below the table
+    if notes:
+        _write_notes(ws, row, notes)
