@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Check, Loader2, FileText, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete';
 import { FileUploadZone } from './FileUploadZone';
 import { AVAILABLE_TRADES } from '@/lib/api/python-service';
 
@@ -150,11 +151,12 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
               value={formData.name}
               onChange={(e) => updateField('name', e.target.value)}
             />
-            <Input
+            <AddressAutocomplete
               label="Address"
-              placeholder="e.g. 123 Main St, Austin, TX"
+              placeholder="Start typing an address..."
               value={formData.address}
-              onChange={(e) => updateField('address', e.target.value)}
+              onChange={(val) => updateField('address', val)}
+              onSelect={(addr) => updateField('address', addr)}
             />
             <Input
               label="Client Name"
