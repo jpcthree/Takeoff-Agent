@@ -96,25 +96,37 @@ export default function ProjectsPage() {
     if (project) setDeleteTarget(project);
   };
 
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
     setIsDeleting(true);
+    setDeleteError(null);
     try {
       // Delete from Supabase if configured
       if (isSupabaseConfigured()) {
         const supabase = createClient();
-        await supabase.from('projects').delete().eq('id', deleteTarget.id);
+        const { error } = await supabase
+          .from('projects')
+          .delete()
+          .eq('id', deleteTarget.id);
+
+        if (error) {
+          throw new Error(error.message || 'Database delete failed');
+        }
       }
 
       // Clean up local data
       sessionStorage.removeItem(`project-meta-${deleteTarget.id}`);
       await clearPdfFiles(deleteTarget.id);
 
-      // Update UI
+      // Update UI — only after successful deletion
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete project';
       console.error('Failed to delete project:', err);
+      setDeleteError(message);
     } finally {
       setIsDeleting(false);
     }
@@ -154,16 +166,22 @@ export default function ProjectsPage() {
         onDelete={handleDeleteRequest}
       />
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteTarget} onClose={() => !isDeleting && setDeleteTarget(null)}>
+      <Dialog open={!!deleteTarget} onClose={() => { if (!isDeleting) { setDeleteTarget(null); setDeleteError(null); } }}>
         <DialogTitle>Delete Project</DialogTitle>
         <DialogDescription>
-          Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot
+          Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This will permanently
+          remove the project and all its data (line items, chat history, and files). This action cannot
           be undone.
         </DialogDescription>
+        {deleteError && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-700">{deleteError}</p>
+          </div>
+        )}
         <DialogActions>
           <Button
             variant="secondary"
-            onClick={() => setDeleteTarget(null)}
+            onClick={() => { setDeleteTarget(null); setDeleteError(null); }}
             disabled={isDeleting}
           >
             Cancel

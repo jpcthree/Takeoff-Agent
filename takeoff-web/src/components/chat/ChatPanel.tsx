@@ -9,9 +9,9 @@ import { useProjectStore } from '@/hooks/useProjectStore';
 import { parseActions, executeAction } from '@/lib/actions/chat-actions';
 
 function ChatPanel() {
-  const { state, updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem } =
+  const { state, updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem, updateLineItem } =
     useProjectStore();
-  const { projectMeta, buildingModel, lineItems, costs } = state;
+  const { projectMeta, buildingModel, lineItems, costs, propertyData, assumptions, propertyNotes, insulationNotes } = state;
 
   // Build a summary of line items by trade for the chat context
   const lineItemsSummary = useMemo(() => {
@@ -23,6 +23,34 @@ function ChatPanel() {
     return Object.entries(byTrade)
       .map(([trade, count]) => `${trade}: ${count} items`)
       .join('. ');
+  }, [lineItems]);
+
+  // Build detailed line items grouped by trade for rich context
+  const lineItemsDetail = useMemo(() => {
+    if (lineItems.length === 0) return undefined;
+    const tradeMap = new Map<string, typeof lineItems>();
+    for (const item of lineItems) {
+      const existing = tradeMap.get(item.trade) || [];
+      existing.push(item);
+      tradeMap.set(item.trade, existing);
+    }
+    return Array.from(tradeMap.entries()).map(([trade, items]) => ({
+      trade,
+      items: items.map((i) => ({
+        id: i.id,
+        description: i.description,
+        quantity: i.quantity,
+        unit: i.unit,
+        unitCost: i.unitCost,
+        unitPrice: i.unitPrice,
+        amount: i.amount,
+      })),
+      subtotal: {
+        materialTotal: items.reduce((s, i) => s + i.materialTotal, 0),
+        laborTotal: items.reduce((s, i) => s + i.laborTotal, 0),
+        amount: items.reduce((s, i) => s + i.amount, 0),
+      },
+    }));
   }, [lineItems]);
 
   // Handle action blocks when the assistant finishes streaming
@@ -37,13 +65,14 @@ function ChatPanel() {
           replaceTradeItems,
           addLineItem,
           removeLineItem,
+          updateLineItem,
           getBuildingModel: () => buildingModel,
           getCosts: () => costs,
           getLineItems: () => lineItems,
         });
       }
     },
-    [updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem, buildingModel, costs, lineItems]
+    [updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem, updateLineItem, buildingModel, costs, lineItems]
   );
 
   const { messages, isStreaming, sendMessage, clearMessages } = useChat(
@@ -52,6 +81,11 @@ function ChatPanel() {
       projectAddress: projectMeta.address,
       buildingModel: buildingModel || undefined,
       lineItemsSummary: lineItemsSummary || undefined,
+      lineItemsDetail,
+      propertyData: propertyData ? (propertyData as unknown as Record<string, unknown>) : undefined,
+      assumptions: assumptions.length > 0 ? assumptions : undefined,
+      propertyNotes: propertyNotes.length > 0 ? propertyNotes : undefined,
+      insulationNotes: insulationNotes.length > 0 ? insulationNotes : undefined,
     },
     { onStreamComplete: handleStreamComplete }
   );

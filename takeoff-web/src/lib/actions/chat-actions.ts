@@ -7,7 +7,7 @@
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 import type { LineItemDict } from '@/lib/api/python-service';
 import { calculateTrade } from '@/lib/api/python-service';
-import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
+import { pythonLineItemToSpreadsheet, calculateRow } from '@/lib/utils/calculations';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,11 +42,19 @@ interface RemoveLineItemAction {
   description: string;
 }
 
+interface UpdateLineItemAction {
+  type: 'update_line_item';
+  item_id: string;
+  field: 'quantity' | 'unitCost' | 'laborRatePct' | 'unitPrice';
+  value: number;
+}
+
 type ChatAction =
   | RecalculateTradeAction
   | UpdateBuildingModelAction
   | AddLineItemAction
-  | RemoveLineItemAction;
+  | RemoveLineItemAction
+  | UpdateLineItemAction;
 
 export interface ActionResult {
   success: boolean;
@@ -91,6 +99,7 @@ interface StoreCallbacks {
   replaceTradeItems: (trade: string, items: SpreadsheetLineItem[], raw: LineItemDict[]) => void;
   addLineItem: (item: SpreadsheetLineItem, raw?: LineItemDict) => void;
   removeLineItem: (id: string) => void;
+  updateLineItem: (id: string, changes: Partial<SpreadsheetLineItem>) => void;
   getBuildingModel: () => Record<string, unknown> | null;
   getCosts: () => Record<string, unknown> | null;
   getLineItems: () => SpreadsheetLineItem[];
@@ -186,6 +195,38 @@ export async function executeAction(
       return {
         success: false,
         message: `Line item not found: ${action.description}`,
+      };
+    }
+
+    case 'update_line_item': {
+      const allItems = store.getLineItems();
+      const target = allItems.find((i) => i.id === action.item_id);
+      if (!target) {
+        return {
+          success: false,
+          message: `Line item not found with ID: ${action.item_id}`,
+        };
+      }
+
+      // Apply the field change
+      const updated = { ...target, [action.field]: action.value };
+
+      // Recalculate derived fields
+      const calc = calculateRow(
+        updated.quantity,
+        updated.unitCost,
+        updated.laborRatePct,
+        updated.unitPrice
+      );
+
+      store.updateLineItem(action.item_id, {
+        [action.field]: action.value,
+        ...calc,
+      });
+
+      return {
+        success: true,
+        message: `Updated ${target.description}: ${action.field} → ${action.value}`,
       };
     }
 

@@ -6,6 +6,7 @@ import { PropertyHero } from './PropertyHero';
 import { TradeTabBar } from './TradeTabBar';
 import { TradeTabContent } from './TradeTabContent';
 import { SpreadsheetToolbar } from './SpreadsheetToolbar';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useAddressEstimate } from '@/hooks/useAddressEstimate';
 import type { TradeSubtotal } from '@/lib/types/line-item';
@@ -203,24 +204,10 @@ function RetrofitWorkspace() {
         {chatOpen ? <X className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
       </button>
 
-      {/* Chat drawer (placeholder — will use existing ChatPanel) */}
+      {/* Chat drawer */}
       {chatOpen && (
-        <div className="w-[360px] border-l border-gray-200 bg-white flex flex-col shrink-0">
-          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-800">AI Assistant</h3>
-            <button
-              onClick={() => setChatOpen(false)}
-              className="text-gray-400 hover:text-gray-600 cursor-pointer"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            {/* ChatPanel will be imported and rendered here */}
-            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-              Chat coming soon
-            </div>
-          </div>
+        <div className="w-[360px] bg-white flex flex-col shrink-0">
+          <ChatPanel />
         </div>
       )}
     </div>

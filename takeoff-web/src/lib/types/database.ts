@@ -68,3 +68,16 @@ export interface CostProfile {
   created_at: string;
   updated_at: string;
 }
+
+export interface EstimateAdjustment {
+  id: string;
+  project_id: string;
+  trade: string;
+  item_description: string;
+  field_changed: string;
+  original_value: number;
+  new_value: number;
+  source: 'user' | 'chat' | 'import';
+  reason: string | null;
+  created_at: string;
+}

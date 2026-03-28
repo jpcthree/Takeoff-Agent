@@ -31,6 +31,7 @@ function WorkspaceInner() {
         dispatch({
           type: 'SET_PROJECT_META',
           meta: {
+            id,
             name: meta.name || '',
             address: meta.address || '',
             buildingType: meta.buildingType || 'residential',

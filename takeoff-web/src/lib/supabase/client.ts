@@ -20,12 +20,15 @@ export function createClient() {
         signInWithOAuth: async () => ({ data: { url: null, provider: null }, error: { message: 'Supabase not configured' } }),
         resetPasswordForEmail: async () => ({ data: {}, error: { message: 'Supabase not configured' } }),
       },
-      from: () => ({
-        select: () => ({ data: [], error: null, order: () => ({ data: [], error: null }) }),
-        insert: () => ({ data: null, error: null }),
-        update: () => ({ data: null, error: null }),
-        delete: () => ({ data: null, error: null }),
-      }),
+      from: () => {
+        const mockResult = { data: null, error: null, eq: () => mockResult, single: () => mockResult, order: () => ({ data: [], error: null }) };
+        return {
+          select: () => ({ data: [], error: null, order: () => ({ data: [], error: null }), eq: () => ({ data: null, error: null, single: () => ({ data: null, error: null }) }) }),
+          insert: () => ({ data: null, error: null, select: () => ({ data: null, error: null, single: () => ({ data: null, error: null }) }) }),
+          update: () => mockResult,
+          delete: () => mockResult,
+        };
+      },
     } as ReturnType<typeof createBrowserClient>;
   }
   return createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY);

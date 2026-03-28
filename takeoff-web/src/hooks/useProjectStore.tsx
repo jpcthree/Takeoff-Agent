@@ -9,6 +9,8 @@ import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 // ---------------------------------------------------------------------------
 
 export interface ProjectMeta {
+  /** Supabase project ID (if persisted) */
+  id?: string;
   name: string;
   address: string;
   clientName: string;

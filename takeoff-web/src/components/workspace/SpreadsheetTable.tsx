@@ -6,6 +6,7 @@ import { SpreadsheetToolbar } from './SpreadsheetToolbar';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useSpreadsheetKeyboard, type RowMeta } from '@/hooks/useSpreadsheetKeyboard';
 import { getTradeLabel } from '@/lib/api/python-service';
+import { trackAdjustment } from '@/lib/data/estimate-persistence';
 import type {
   SpreadsheetLineItem,
   TradeSubtotal,
@@ -243,6 +244,24 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
       setEditingCell(null);
       return;
     }
+
+    // Track the adjustment for learning (if project is persisted)
+    const editedItem = items.find((i) => i.id === editingCell.id);
+    if (editedItem && state.projectMeta.id) {
+      const originalValue = editedItem[editingCell.key as keyof SpreadsheetLineItem] as number;
+      if (originalValue !== numVal) {
+        trackAdjustment({
+          project_id: state.projectMeta.id,
+          trade: editedItem.trade,
+          item_description: editedItem.description,
+          field_changed: editingCell.key,
+          original_value: originalValue,
+          new_value: numVal,
+          source: 'user',
+        }).catch(() => {}); // fire-and-forget
+      }
+    }
+
     setItems((prev) =>
       prev.map((item) => {
         if (item.id !== editingCell.id) return item;
@@ -252,7 +271,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
     );
     updateLineItem(editingCell.id, { [editingCell.key]: numVal });
     setEditingCell(null);
-  }, [editingCell, editValue, updateLineItem]);
+  }, [editingCell, editValue, updateLineItem, items, state.projectMeta.id]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingCell(null);

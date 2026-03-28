@@ -14,6 +14,28 @@ interface ProjectContext {
   projectAddress?: string;
   buildingModel?: Record<string, unknown>;
   lineItemsSummary?: string;
+  /** Full line items grouped by trade for detailed context */
+  lineItemsDetail?: Array<{
+    trade: string;
+    items: Array<{
+      id: string;
+      description: string;
+      quantity: number;
+      unit: string;
+      unitCost: number;
+      unitPrice: number;
+      amount: number;
+    }>;
+    subtotal: { materialTotal: number; laborTotal: number; amount: number };
+  }>;
+  /** Property data from address lookup */
+  propertyData?: Record<string, unknown>;
+  /** Assumptions used in the estimate */
+  assumptions?: string[];
+  /** Property notes */
+  propertyNotes?: Array<{ title: string; lines: string[] }>;
+  /** Insulation-specific notes */
+  insulationNotes?: Array<{ title: string; lines: string[] }>;
 }
 
 interface UseChatOptions {

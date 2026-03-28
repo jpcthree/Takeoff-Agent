@@ -4,6 +4,7 @@ import { useCallback, useRef } from 'react';
 import { useProjectStore } from './useProjectStore';
 import { estimateFromAddress } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
+import { saveLineItems, saveProjectEstimateData } from '@/lib/data/estimate-persistence';
 
 /**
  * Hook that orchestrates the address-based estimate pipeline.
@@ -60,6 +61,17 @@ export function useAddressEstimate() {
         pythonLineItemToSpreadsheet(item, idx)
       );
       setLineItems(spreadsheetItems, result.line_items);
+
+      // Auto-save to Supabase if project has an ID
+      const projectId = state.projectMeta.id;
+      if (projectId) {
+        saveLineItems(projectId, spreadsheetItems).catch(() => {});
+        saveProjectEstimateData(projectId, {
+          propertyData: result.property_data,
+          assumptions: result.assumptions,
+          inputMethod: 'address',
+        }).catch(() => {});
+      }
 
       setStatus('ready');
       addAnalysisMessage('Estimate complete!');
