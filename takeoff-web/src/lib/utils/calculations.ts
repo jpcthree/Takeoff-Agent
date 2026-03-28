@@ -124,7 +124,8 @@ export function pythonLineItemToSpreadsheet(
   item: LineItemDict,
   index: number
 ): SpreadsheetLineItem {
-  const unitCost = item.material_unit_cost || 0;
+  // Unit cost blank by default — user enters manually or uploads pricing
+  const unitCost = 0;
   const quantity = item.quantity || 0;
   const materialTotal = quantity * unitCost;
 

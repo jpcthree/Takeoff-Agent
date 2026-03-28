@@ -8,7 +8,18 @@ import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete';
 import { FileUploadZone } from './FileUploadZone';
 import { AVAILABLE_TRADES } from '@/lib/api/python-service';
 
-const STEPS = [
+const TAKEOFF_STEPS = [
+  { label: 'Project Details' },
+  { label: 'Select Trades' },
+  { label: 'Upload Plans' },
+];
+
+const RETROFIT_STEPS = [
+  { label: 'Property Details' },
+  { label: 'Select Trades' },
+];
+
+const GENERIC_STEPS = [
   { label: 'Project Details' },
   { label: 'Select Trades' },
   { label: 'Input Method' },
@@ -24,7 +35,10 @@ export interface ProjectFormData {
   inputMethod: 'plans' | 'address';
 }
 
+type WizardMode = 'takeoff' | 'retrofit' | 'generic';
+
 interface CreateProjectWizardProps {
+  mode?: WizardMode;
   onComplete?: (data: ProjectFormData) => void;
 }
 
@@ -32,7 +46,7 @@ function StepIndicator({
   steps,
   currentStep,
 }: {
-  steps: typeof STEPS;
+  steps: { label: string }[];
   currentStep: number;
 }) {
   return (
@@ -79,7 +93,12 @@ function StepIndicator({
   );
 }
 
-function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
+function CreateProjectWizard({ mode = 'generic', onComplete }: CreateProjectWizardProps) {
+  const steps =
+    mode === 'takeoff' ? TAKEOFF_STEPS :
+    mode === 'retrofit' ? RETROFIT_STEPS :
+    GENERIC_STEPS;
+
   const [step, setStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState<ProjectFormData>({
@@ -89,7 +108,7 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
     buildingType: 'residential',
     selectedTrades: AVAILABLE_TRADES.map((t) => t.id), // all selected by default
     files: [],
-    inputMethod: 'plans',
+    inputMethod: mode === 'retrofit' ? 'address' : 'plans',
   });
 
   const updateField = <K extends keyof ProjectFormData>(
@@ -110,8 +129,15 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
   };
 
   const canAdvance = () => {
-    if (step === 0) return formData.name.trim().length > 0;
+    if (step === 0) {
+      // Retrofit requires address
+      if (mode === 'retrofit') {
+        return formData.name.trim().length > 0 && formData.address.trim().length > 0;
+      }
+      return formData.name.trim().length > 0;
+    }
     if (step === 1) return formData.selectedTrades.length > 0;
+    // Step 2 (only in takeoff/generic mode)
     if (step === 2 && formData.inputMethod === 'address') {
       return formData.address.trim().length > 0;
     }
@@ -119,7 +145,7 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
   };
 
   const handleNext = async () => {
-    if (step < STEPS.length - 1) {
+    if (step < steps.length - 1) {
       setStep((s) => s + 1);
     } else {
       setIsCreating(true);
@@ -137,27 +163,49 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <StepIndicator steps={STEPS} currentStep={step} />
+      <StepIndicator steps={steps} currentStep={step} />
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
         {step === 0 && (
           <div className="space-y-5">
             <h2 className="text-lg font-semibold text-gray-900 mb-6">
-              Project Details
+              {mode === 'retrofit' ? 'Property Details' : 'Project Details'}
             </h2>
+
+            {/* In retrofit mode, address comes first and is required */}
+            {mode === 'retrofit' && (
+              <AddressAutocomplete
+                label="Property Address"
+                placeholder="Start typing an address..."
+                value={formData.address}
+                onChange={(val) => updateField('address', val)}
+                onSelect={(addr) => {
+                  updateField('address', addr);
+                  // Auto-fill project name from address if empty
+                  if (!formData.name.trim()) {
+                    updateField('name', addr.split(',')[0] || addr);
+                  }
+                }}
+              />
+            )}
+
             <Input
               label="Project Name"
-              placeholder="e.g. Smith Residence"
+              placeholder={mode === 'retrofit' ? 'Auto-filled from address' : 'e.g. Smith Residence'}
               value={formData.name}
               onChange={(e) => updateField('name', e.target.value)}
             />
-            <AddressAutocomplete
-              label="Address"
-              placeholder="Start typing an address..."
-              value={formData.address}
-              onChange={(val) => updateField('address', val)}
-              onSelect={(addr) => updateField('address', addr)}
-            />
+
+            {mode !== 'retrofit' && (
+              <AddressAutocomplete
+                label="Address"
+                placeholder="Start typing an address..."
+                value={formData.address}
+                onChange={(val) => updateField('address', val)}
+                onSelect={(addr) => updateField('address', addr)}
+              />
+            )}
+
             <Input
               label="Client Name"
               placeholder="e.g. John Smith"
@@ -243,7 +291,29 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
           </div>
         )}
 
-        {step === 2 && (
+        {step === 2 && mode === 'takeoff' && (
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              Upload Construction Plans
+            </h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Upload blueprint PDFs for AI-powered analysis and takeoff generation.
+            </p>
+            <FileUploadZone
+              files={formData.files}
+              onFilesChange={(files) => updateField('files', files)}
+            />
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-xs text-blue-700">
+                <strong>What happens next:</strong> Your project will open in the
+                workspace where you can view your plans, run AI analysis to extract
+                building details, and generate cost estimates for your selected trades.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && mode === 'generic' && (
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">
               How would you like to estimate?
@@ -253,7 +323,6 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
             </p>
 
             <div className="grid grid-cols-2 gap-4 mb-6">
-              {/* Upload Plans card */}
               <button
                 type="button"
                 onClick={() => updateField('inputMethod', 'plans')}
@@ -278,7 +347,6 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
                 </div>
               </button>
 
-              {/* Estimate from Address card */}
               <button
                 type="button"
                 onClick={() => updateField('inputMethod', 'address')}
@@ -304,7 +372,6 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
               </button>
             </div>
 
-            {/* Conditional content below the cards */}
             {formData.inputMethod === 'plans' && (
               <>
                 <FileUploadZone
@@ -352,7 +419,7 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 Creating...
               </>
-            ) : step === STEPS.length - 1 ? (
+            ) : step === steps.length - 1 ? (
               'Create Project →'
             ) : (
               'Next'
@@ -365,3 +432,4 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
 }
 
 export { CreateProjectWizard };
+export type { WizardMode };

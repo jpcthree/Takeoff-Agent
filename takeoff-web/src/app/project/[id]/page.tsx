@@ -8,7 +8,7 @@ import {
   Separator,
 } from 'react-resizable-panels';
 import { PdfViewer } from '@/components/workspace/PdfViewer';
-import { PropertyInfoPanel } from '@/components/workspace/PropertyInfoPanel';
+import { RetrofitWorkspace } from '@/components/workspace/RetrofitWorkspace';
 import { SpreadsheetTable } from '@/components/workspace/SpreadsheetTable';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -49,19 +49,29 @@ function WorkspaceInner() {
 
   const isAddressMode = inputMethod === 'address';
 
+  // Retrofit mode: full-page layout with property hero + trade tabs
+  if (isAddressMode) {
+    return (
+      <ErrorBoundary>
+        <RetrofitWorkspace />
+      </ErrorBoundary>
+    );
+  }
+
+  // Takeoff mode: 3-panel layout
   return (
     <Group orientation="horizontal" className="h-full">
-      {/* Left panel: PDF Viewer or Property Info */}
-      <Panel defaultSize={isAddressMode ? 22 : 20} minSize={15}>
+      {/* Left panel: PDF Viewer */}
+      <Panel defaultSize={20} minSize={15}>
         <ErrorBoundary>
-          {isAddressMode ? <PropertyInfoPanel /> : <PdfViewer />}
+          <PdfViewer />
         </ErrorBoundary>
       </Panel>
 
       <Separator className="w-1 bg-gray-200 hover:bg-primary/40 transition-colors" />
 
       {/* Spreadsheet */}
-      <Panel defaultSize={isAddressMode ? 53 : 55} minSize={30}>
+      <Panel defaultSize={55} minSize={30}>
         <ErrorBoundary>
           <SpreadsheetTable />
         </ErrorBoundary>
