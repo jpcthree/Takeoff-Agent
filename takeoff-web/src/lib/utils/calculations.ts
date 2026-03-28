@@ -18,7 +18,7 @@ export interface RowCalculation {
  *
  * @param qty - Quantity of the item
  * @param unitCost - Material unit cost
- * @param laborRatePct - Labor rate as a percentage of material cost (e.g. 0.35 = 35%)
+ * @param laborRatePct - Labor rate as a percentage of material cost (e.g. 35 = 35%)
  * @param unitPrice - Selling price per unit
  */
 export function calculateRow(
@@ -28,7 +28,7 @@ export function calculateRow(
   unitPrice: number
 ): RowCalculation {
   const materialTotal = qty * unitCost;
-  const laborTotal = materialTotal * laborRatePct;
+  const laborTotal = materialTotal * (laborRatePct / 100);
   const laborPlusMaterials = materialTotal + laborTotal;
   const amount = qty * unitPrice;
   const grossProfit = amount - laborPlusMaterials;
@@ -161,6 +161,7 @@ export function pythonLineItemToSpreadsheet(
     grossProfit,
     gpm,
     codeRequirement: item.code_requirement || '',
+    sheets: item.sheets || 0,
     sortOrder: index,
     isUserAdded: false,
   };

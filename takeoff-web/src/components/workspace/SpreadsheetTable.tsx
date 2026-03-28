@@ -7,6 +7,7 @@ import { useProjectStore } from '@/hooks/useProjectStore';
 import { useSpreadsheetKeyboard, type RowMeta } from '@/hooks/useSpreadsheetKeyboard';
 import { getTradeLabel } from '@/lib/api/python-service';
 import { trackAdjustment } from '@/lib/data/estimate-persistence';
+import { calculateRow } from '@/lib/utils/calculations';
 import type {
   SpreadsheetLineItem,
   TradeSubtotal,
@@ -15,30 +16,11 @@ import type {
 
 // ---------------------------------------------------------------------------
 // Recompute derived fields from user-editable inputs
+// Uses shared calculateRow() to stay consistent with export_xlsx formulas.
 // ---------------------------------------------------------------------------
-function computeItem(
-  item: Omit<SpreadsheetLineItem, 'materialTotal' | 'materialPct' | 'laborTotal' | 'laborPct' | 'laborPlusMaterials' | 'amount' | 'grossProfit' | 'gpm'>
-): SpreadsheetLineItem {
-  const materialTotal = item.quantity * item.unitCost;
-  const amount = item.quantity * item.unitPrice;
-  const laborTotal = (item.laborRatePct / 100) * amount;
-  const laborPlusMaterials = materialTotal + laborTotal;
-  const grossProfit = amount - laborPlusMaterials;
-  const gpm = amount > 0 ? grossProfit / amount : 0;
-  const materialPct = amount > 0 ? materialTotal / amount : 0;
-  const laborPct = amount > 0 ? laborTotal / amount : 0;
-
-  return {
-    ...item,
-    materialTotal,
-    materialPct,
-    laborTotal,
-    laborPct,
-    laborPlusMaterials,
-    amount,
-    grossProfit,
-    gpm,
-  };
+function computeItem(item: SpreadsheetLineItem): SpreadsheetLineItem {
+  const calc = calculateRow(item.quantity, item.unitCost, item.laborRatePct, item.unitPrice);
+  return { ...item, ...calc };
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +32,7 @@ const COLUMNS = [
   { key: 'codeRequirement', label: 'Code', width: 'w-[120px]' },
   { key: 'quantity', label: 'Qty', width: 'w-[70px]', align: 'right' as const },
   { key: 'unit', label: 'Unit', width: 'w-[60px]', align: 'center' as const },
+  { key: 'sheets', label: 'Sheets', width: 'w-[65px]', align: 'right' as const },
   { key: 'unitCost', label: 'Unit Cost', width: 'w-[90px]', align: 'right' as const, editable: true },
   { key: 'materialTotal', label: 'Material Total', width: 'w-[100px]', align: 'right' as const },
   { key: 'materialPct', label: 'Mat %', width: 'w-[70px]', align: 'right' as const },
@@ -91,6 +74,8 @@ function getCellValue(item: SpreadsheetLineItem, key: string): string {
       return item.quantity.toLocaleString();
     case 'unit':
       return item.unit;
+    case 'sheets':
+      return item.sheets ? item.sheets.toLocaleString() : '';
     case 'unitCost':
       return item.unitCost === 0 ? '—' : formatCurrency(item.unitCost);
     case 'materialTotal':
@@ -460,6 +445,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                           <td className="px-2 py-1.5 border-r border-gray-200" />
                           <td className="px-2 py-1.5 border-r border-gray-200" />
                           <td className="px-2 py-1.5 border-r border-gray-200" />
+                          <td className="px-2 py-1.5 border-r border-gray-200" />
                           <td className="px-2 py-1.5 text-right border-r border-gray-200">{formatCurrency(sub.materialTotal)}</td>
                           <td className="px-2 py-1.5 border-r border-gray-200" />
                           <td className="px-2 py-1.5 border-r border-gray-200" />
@@ -484,6 +470,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                   <tr className="bg-slate-800 text-white font-semibold">
                     <td className="px-2 py-2 border-r border-slate-700" />
                     <td className="px-2 py-2 border-r border-slate-700">Grand Total</td>
+                    <td className="px-2 py-2 border-r border-slate-700" />
                     <td className="px-2 py-2 border-r border-slate-700" />
                     <td className="px-2 py-2 border-r border-slate-700" />
                     <td className="px-2 py-2 border-r border-slate-700" />

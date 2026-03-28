@@ -90,10 +90,15 @@ function RetrofitWorkspace() {
     return map;
   }, [lineItems, trades]);
 
-  // Combine notes for the active trade
+  // Combine notes for the active trade (deduplicate by title)
   const activeTradeNotes = useMemo(() => {
     const all = [...(propertyNotes || []), ...(insulationNotes || [])];
-    return all;
+    const seen = new Set<string>();
+    return all.filter((note) => {
+      if (seen.has(note.title)) return false;
+      seen.add(note.title);
+      return true;
+    });
   }, [propertyNotes, insulationNotes]);
 
   // Loading state

@@ -28,6 +28,8 @@ export interface SpreadsheetLineItem {
 
   // Building code requirement (insulation items only)
   codeRequirement?: string;
+  // Sheet count (drywall items)
+  sheets?: number;
 
   // Metadata
   sortOrder: number;

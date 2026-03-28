@@ -21,6 +21,7 @@ export interface LineItemDict {
   labor_total: number;
   line_total: number;
   code_requirement?: string;
+  sheets?: number;
 }
 
 // ---------------------------------------------------------------------------
