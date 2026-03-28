@@ -119,7 +119,7 @@ def _load_api_keys() -> dict:
 def geocode_address(address: str, google_api_key: str = "") -> tuple[float, float, str]:
     """
     Geocode an address → (lat, lng, source).
-    Tries Google Geocoding first, then US Census Geocoder as fallback.
+    Tries Google Geocoding first, then US Census, then Nominatim (OSM).
     """
     # Try Google Geocoding API
     if google_api_key:
@@ -136,7 +136,7 @@ def geocode_address(address: str, google_api_key: str = "") -> tuple[float, floa
         except Exception as e:
             pass  # Fall through to Census
 
-    # Fallback: US Census Geocoder (free, no key)
+    # Fallback 1: US Census Geocoder (free, no key)
     try:
         resp = requests.get(
             "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
@@ -152,6 +152,25 @@ def geocode_address(address: str, google_api_key: str = "") -> tuple[float, floa
         if matches:
             coords = matches[0]["coordinates"]
             return coords["y"], coords["x"], "us_census"
+    except Exception:
+        pass
+
+    # Fallback 2: Nominatim / OpenStreetMap (free, no key, 1 req/sec policy)
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q": address,
+                "format": "json",
+                "limit": 1,
+                "countrycodes": "us",
+            },
+            headers={"User-Agent": "TakeoffEstimator/1.0 (construction-estimating)"},
+            timeout=_TIMEOUT,
+        )
+        data = resp.json()
+        if data and len(data) > 0:
+            return float(data[0]["lat"]), float(data[0]["lon"]), "nominatim"
     except Exception:
         pass
 
