@@ -247,14 +247,18 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
       }
     }
 
+    let computedChanges: Partial<SpreadsheetLineItem> = {};
     setItems((prev) =>
       prev.map((item) => {
         if (item.id !== editingCell.id) return item;
         const updated = { ...item, [editingCell.key]: numVal };
-        return computeItem(updated);
+        const recomputed = computeItem(updated);
+        computedChanges = recomputed;
+        return recomputed;
       })
     );
-    updateLineItem(editingCell.id, { [editingCell.key]: numVal });
+    // Send fully recomputed item to store so the useEffect sync doesn't overwrite
+    updateLineItem(editingCell.id, computedChanges);
     setEditingCell(null);
   }, [editingCell, editValue, updateLineItem, items, state.projectMeta.id]);
 
