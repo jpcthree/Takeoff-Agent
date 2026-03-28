@@ -640,6 +640,23 @@ def _lookup_rapidapi_property(
                 except (ValueError, TypeError):
                     pass
 
+        # Roof info
+        for roof_key in ("roof", "roofing", "roof_type", "roof_material"):
+            v = prop.get(roof_key)
+            if v and isinstance(v, str):
+                # Normalize: "Asphalt Shingle" → "asphalt_shingle"
+                normalized = v.strip().lower().replace(" ", "_")
+                if not result.get("roof_material"):
+                    result["roof_material"] = normalized
+                break
+            elif v and isinstance(v, dict):
+                # Some APIs return {"type": "...", "material": "..."}
+                if v.get("material"):
+                    result["roof_material"] = str(v["material"]).strip().lower().replace(" ", "_")
+                if v.get("type"):
+                    result["roof_type"] = str(v["type"]).strip().lower().replace(" ", "_")
+                break
+
         # Alternate field names
         if not result.get("total_sqft"):
             for alt in ("building_size", "sqft_raw", "living_area"):
@@ -849,6 +866,7 @@ def lookup_property(address: str) -> PropertyData:
             for field_name in [
                 "year_built", "total_sqft", "stories", "bedrooms", "bathrooms",
                 "lot_sqft", "basement", "garage", "foundation_type",
+                "roof_type", "roof_material",
             ]:
                 val = rapid_data.get(field_name)
                 if val and not getattr(prop, field_name, None):
