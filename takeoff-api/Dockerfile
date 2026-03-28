@@ -18,4 +18,5 @@ EXPOSE 8000
 # Run from the takeoff-api directory
 WORKDIR /app/takeoff-api
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use shell form so $PORT is expanded at runtime
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
