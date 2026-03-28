@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Dialog, DialogTitle, DialogDescription, DialogActions } from '@/components/ui/Dialog';
 import { ProjectGrid } from '@/components/projects/ProjectGrid';
 import {
   ProjectFilters,
@@ -11,7 +12,8 @@ import {
   type SortOption,
   type ViewMode,
 } from '@/components/projects/ProjectFilters';
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { clearPdfFiles } from '@/lib/utils/pdf-store';
 import type { Project } from '@/lib/types/database';
 
 export default function ProjectsPage() {
@@ -85,10 +87,37 @@ export default function ProjectsPage() {
     return result;
   }, [projects, search, statusFilter, sort]);
 
-  const handleDelete = async (id: string) => {
-    const supabase = createClient();
-    await supabase.from('projects').delete().eq('id', id);
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteRequest = (id: string) => {
+    const project = projects.find((p) => p.id === id);
+    if (project) setDeleteTarget(project);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      // Delete from Supabase if configured
+      if (isSupabaseConfigured()) {
+        const supabase = createClient();
+        await supabase.from('projects').delete().eq('id', deleteTarget.id);
+      }
+
+      // Clean up local data
+      sessionStorage.removeItem(`project-meta-${deleteTarget.id}`);
+      await clearPdfFiles(deleteTarget.id);
+
+      // Update UI
+      setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -122,8 +151,33 @@ export default function ProjectsPage() {
       <ProjectGrid
         projects={filteredProjects}
         loading={loading}
-        onDelete={handleDelete}
+        onDelete={handleDeleteRequest}
       />
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onClose={() => !isDeleting && setDeleteTarget(null)}>
+        <DialogTitle>Delete Project</DialogTitle>
+        <DialogDescription>
+          Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot
+          be undone.
+        </DialogDescription>
+        <DialogActions>
+          <Button
+            variant="secondary"
+            onClick={() => setDeleteTarget(null)}
+            disabled={isDeleting}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            icon={isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+          >
+            {isDeleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }
