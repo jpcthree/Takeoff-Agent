@@ -75,6 +75,10 @@ class PropertyData:
     land_value: float = 0.0        # Appraised land value
     improvement_value: float = 0.0 # Appraised improvement value
 
+    # Sale history
+    last_sale_date: str = ""       # "YYYY-MM-DD"
+    last_sale_price: float = 0.0
+
     # Google Solar API
     solar_roof_segments: list = field(default_factory=list)
     # Each: {"pitch_deg": float, "azimuth_deg": float, "area_m2": float}
@@ -95,12 +99,13 @@ class PropertyData:
 # ── API Key Loader ──────────────────────────────────────────────────────────
 def _load_api_keys() -> dict:
     """Load API keys from env vars first, then config/api_keys.json."""
-    keys = {"google_api_key": "", "attom_api_key": "", "anthropic_api_key": ""}
+    keys = {"google_api_key": "", "attom_api_key": "", "anthropic_api_key": "", "rapidapi_key": ""}
 
     # Env vars take priority
     keys["google_api_key"] = os.environ.get("GOOGLE_API_KEY", "")
     keys["attom_api_key"] = os.environ.get("ATTOM_API_KEY", "")
     keys["anthropic_api_key"] = os.environ.get("ANTHROPIC_API_KEY", "")
+    keys["rapidapi_key"] = os.environ.get("RAPIDAPI_KEY", "")
 
     # Fall back to JSON file
     try:
@@ -582,6 +587,127 @@ def _query_co_statewide_parcels(lat: float, lng: float) -> dict:
 
 
 # ── ATTOM Stub (future) ────────────────────────────────────────────────────
+# ── 5. RapidAPI Property Lookup (National Fallback) ────────────────────────
+def _lookup_rapidapi_property(
+    address: str, lat: float, lng: float, rapidapi_key: str
+) -> dict:
+    """
+    Query RapidAPI Realtor.com (or similar) for property details + sale history.
+    Free tier: 500 req/month.  Returns dict with standard property fields.
+    """
+    if not rapidapi_key:
+        return {}
+
+    try:
+        # Use the Realtor.com property search v2
+        resp = requests.get(
+            "https://realtor16.p.rapidapi.com/property",
+            params={"address": address},
+            headers={
+                "X-RapidAPI-Key": rapidapi_key,
+                "X-RapidAPI-Host": "realtor16.p.rapidapi.com",
+            },
+            timeout=_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            return {}
+        data = resp.json()
+
+        # Navigate common response shapes
+        prop = data if isinstance(data, dict) else {}
+        # Some APIs nest under "home", "property", etc.
+        for key in ("home", "property", "data", "result"):
+            if key in prop and isinstance(prop[key], dict):
+                prop = prop[key]
+                break
+
+        result = {}
+
+        # Basic property fields
+        for src_key, dst_key, convert in [
+            ("year_built", "year_built", int),
+            ("sqft", "total_sqft", float),
+            ("beds", "bedrooms", int),
+            ("baths", "bathrooms", float),
+            ("stories", "stories", int),
+            ("lot_sqft", "lot_sqft", float),
+            ("garage", "garage", str),
+        ]:
+            val = prop.get(src_key)
+            if val:
+                try:
+                    result[dst_key] = convert(val)
+                except (ValueError, TypeError):
+                    pass
+
+        # Alternate field names
+        if not result.get("total_sqft"):
+            for alt in ("building_size", "sqft_raw", "living_area"):
+                v = prop.get(alt)
+                if v:
+                    try:
+                        result["total_sqft"] = float(v)
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
+        if not result.get("bedrooms"):
+            for alt in ("bedrooms", "beds_count", "bedroom_count"):
+                v = prop.get(alt)
+                if v:
+                    try:
+                        result["bedrooms"] = int(v)
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
+        if not result.get("bathrooms"):
+            for alt in ("bathrooms", "baths_full", "bath_count"):
+                v = prop.get(alt)
+                if v:
+                    try:
+                        result["bathrooms"] = float(v)
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
+        # Sale history
+        sale_history = prop.get("last_sold") or prop.get("sale_history") or {}
+        if isinstance(sale_history, list) and sale_history:
+            sale_history = sale_history[0]
+        if isinstance(sale_history, dict):
+            result["last_sale_date"] = str(sale_history.get("date", ""))
+            price = sale_history.get("price", 0)
+            if price:
+                try:
+                    result["last_sale_price"] = float(price)
+                except (ValueError, TypeError):
+                    pass
+
+        # Also check top-level last_sold_price / last_sold_date
+        if not result.get("last_sale_price"):
+            for pkey in ("last_sold_price", "sold_price", "price"):
+                v = prop.get(pkey)
+                if v:
+                    try:
+                        result["last_sale_price"] = float(v)
+                    except (ValueError, TypeError):
+                        pass
+                    break
+        if not result.get("last_sale_date"):
+            for dkey in ("last_sold_date", "sold_date"):
+                v = prop.get(dkey)
+                if v:
+                    result["last_sale_date"] = str(v)
+                    break
+
+        return result
+
+    except Exception as e:
+        print(f"    ✗ RapidAPI lookup failed: {e}")
+        return {}
+
+
 def lookup_attom_property(address: str, api_key: str) -> dict:
     """
     Query ATTOM Data API for comprehensive property details.
@@ -710,10 +836,50 @@ def lookup_property(address: str) -> PropertyData:
         prop.warnings.append("Colorado GIS data not available — using era-based heuristics for all property details.")
         print("    ✗ No CO GIS data found")
 
-    # ── Step 5: ATTOM (future) ──────────────────────────────────────────
-    # Uncomment when ATTOM API key is available:
-    # attom_data = lookup_attom_property(address, keys["attom_api_key"])
-    # ... merge into prop ...
+    # ── Step 4b: RapidAPI National Fallback ─────────────────────────────
+    # If CO GIS returned mostly empty data, try RapidAPI for national coverage
+    _core_fields = [prop.year_built, prop.total_sqft, prop.bedrooms, prop.bathrooms]
+    _has_property_data = sum(1 for v in _core_fields if v) >= 2
+    if not _has_property_data and keys.get("rapidapi_key"):
+        print("  Querying RapidAPI for property details (national fallback)...")
+        rapid_data = _lookup_rapidapi_property(
+            address, prop.lat, prop.lng, keys["rapidapi_key"]
+        )
+        if rapid_data:
+            for field_name in [
+                "year_built", "total_sqft", "stories", "bedrooms", "bathrooms",
+                "lot_sqft", "basement", "garage", "foundation_type",
+            ]:
+                val = rapid_data.get(field_name)
+                if val and not getattr(prop, field_name, None):
+                    setattr(prop, field_name, val)
+                    prop.sources[field_name] = "rapidapi"
+            # Sale history (always from RapidAPI if available)
+            if rapid_data.get("last_sale_date"):
+                prop.last_sale_date = rapid_data["last_sale_date"]
+                prop.sources["last_sale"] = "rapidapi"
+            if rapid_data.get("last_sale_price"):
+                prop.last_sale_price = rapid_data["last_sale_price"]
+            found = [k for k in rapid_data if rapid_data[k]]
+            print(f"    → Found: {', '.join(found)}")
+        else:
+            print("    ✗ No RapidAPI data found")
+    elif not _has_property_data:
+        prop.warnings.append("No property data API available — using era-based heuristics.")
+
+    # Also try RapidAPI just for sale history even if CO GIS had property data
+    if not prop.last_sale_date and keys.get("rapidapi_key") and _has_property_data:
+        print("  Querying RapidAPI for sale history...")
+        rapid_data = _lookup_rapidapi_property(
+            address, prop.lat, prop.lng, keys["rapidapi_key"]
+        )
+        if rapid_data.get("last_sale_date"):
+            prop.last_sale_date = rapid_data["last_sale_date"]
+            prop.last_sale_price = rapid_data.get("last_sale_price", 0)
+            prop.sources["last_sale"] = "rapidapi"
+            print(f"    → Last sale: {prop.last_sale_date} for ${prop.last_sale_price:,.0f}")
+        else:
+            print("    ✗ No sale history found")
 
     # ── Summary ─────────────────────────────────────────────────────────
     print("\n  Property Data Summary:")
@@ -882,6 +1048,29 @@ def fetch_property_images(
             results["satellite"] = path
     except Exception as e:
         print(f"    ✗ Satellite image fetch failed: {e}")
+
+    # Fallback: OpenStreetMap static tile if both Google images failed
+    if not results["street_view"] and not results["satellite"]:
+        try:
+            import math
+            zoom = 18
+            n = 2 ** zoom
+            x_tile = int((lng + 180.0) / 360.0 * n)
+            lat_rad = math.radians(lat)
+            y_tile = int((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n)
+            url = f"https://tile.openstreetmap.org/{zoom}/{x_tile}/{y_tile}.png"
+            resp = requests.get(
+                url, timeout=_TIMEOUT,
+                headers={"User-Agent": "TakeoffEstimator/1.0 (construction-estimating)"},
+            )
+            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+                path = os.path.join(output_dir, "osm_map.png")
+                with open(path, "wb") as f:
+                    f.write(resp.content)
+                results["satellite"] = path
+                print("    → Using OSM map tile as fallback image")
+        except Exception as e:
+            print(f"    ✗ OSM tile fallback failed: {e}")
 
     return results
 

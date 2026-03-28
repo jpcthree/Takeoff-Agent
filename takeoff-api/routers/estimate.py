@@ -173,12 +173,11 @@ async def estimate_from_address(req: EstimateRequest):
     roof_lines = _build_roof_info(prop, era, roof_classification)
     code_lines = _build_code_requirements_notes(era_config, climate_zone)
 
+    # Property Summary is now shown in PropertyHero card — not in notes
     property_notes = [
-        ("Property Summary", summary_lines),
         ("Roof Information", roof_lines),
     ]
     insulation_notes = [
-        ("Property Summary", summary_lines),
         ("Building Code Requirements", code_lines),
         ("Roof Information", roof_lines),
     ]
@@ -201,6 +200,8 @@ async def estimate_from_address(req: EstimateRequest):
         "total_value": prop.total_value or 0,
         "land_value": prop.land_value or 0,
         "improvement_value": prop.improvement_value or 0,
+        "last_sale_date": prop.last_sale_date or "",
+        "last_sale_price": prop.last_sale_price or 0,
         "sources": prop.sources,
         "warnings": prop.warnings,
     }

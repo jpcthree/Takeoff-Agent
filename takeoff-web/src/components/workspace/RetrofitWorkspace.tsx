@@ -21,7 +21,6 @@ function RetrofitWorkspace() {
   const {
     propertyData,
     propertyImages,
-    assumptions,
     roofClassification,
     propertyNotes,
     insulationNotes,
@@ -165,7 +164,6 @@ function RetrofitWorkspace() {
             propertyData={propertyData}
             images={propertyImages}
             roofClassification={roofClassification}
-            assumptions={assumptions}
           />
 
           {/* Trade Tabs */}

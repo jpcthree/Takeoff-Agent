@@ -15,13 +15,14 @@ function TradeTabContent({ trade, notes }: TradeTabContentProps) {
   const tradeNotes = notes?.filter((note) => {
     const titleLower = note.title.toLowerCase();
     const tradeLower = trade.toLowerCase();
+    // Filter out Property Summary — that data lives in PropertyHero now
+    if (titleLower.includes('property summary')) return false;
     // Match notes that mention the trade name, or show all notes for the trade
     return (
       titleLower.includes(tradeLower) ||
       titleLower.includes(getTradeLabel(trade).toLowerCase()) ||
       // Show general notes on first trade
       titleLower.includes('general') ||
-      titleLower.includes('summary') ||
       titleLower.includes('code')
     );
   });
