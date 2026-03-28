@@ -14,7 +14,7 @@ const PYTHON_API_URL =
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { line_items, project_name, project_address } = body;
+    const { line_items, project_name, project_address, notes, insulation_notes, images } = body;
 
     if (!line_items || !Array.isArray(line_items)) {
       return Response.json({ error: 'No line_items provided' }, { status: 400 });
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       const res = await fetch(`${PYTHON_API_URL}/export/xlsx`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ line_items, project_name, project_address }),
+        body: JSON.stringify({ line_items, project_name, project_address, notes, insulation_notes, images }),
         signal: controller.signal,
       });
 

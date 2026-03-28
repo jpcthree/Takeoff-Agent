@@ -47,6 +47,17 @@ def _rigid_per_sf(costs: dict, cost_key: str, fallback: float = 1.50, sheet_sf: 
     return sheet_cost
 
 
+def _blown_per_sf(costs: dict, cost_key: str = "blown_cellulose",
+                  fallback: float = 0.35, coverage_sf: float = 40.0) -> float:
+    """Convert blown insulation bag cost to per-SF cost.
+    Blown cellulose is ~$12.50/bag covering ~40 SF at R-38.
+    """
+    bag_cost = _lookup_cost(costs, "insulation", cost_key, fallback)
+    if bag_cost > 5.0:  # likely a per-bag price, not per-SF
+        return bag_cost / coverage_sf
+    return bag_cost
+
+
 def _batt_cost_key(r_value: float, thickness: str) -> str:
     """Map R-value and wall thickness to the correct cost key."""
     mapping = {
@@ -143,7 +154,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             items.append(_item(
                 "Wall Insulation",
                 f"{floor_label} - R-{int(r_val)} blown-in wall insulation",
-                sf, "sf", _lookup_cost(costs, "insulation", "blown_cellulose", 0.80),
+                sf, "sf", _blown_per_sf(costs, "blown_cellulose"),
                 net * 0.02, rate,
             ))
 
@@ -199,7 +210,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             sf = round(attic * WASTE_BLOWN, 2)
             items.append(_item(
                 "Attic Insulation", f"Attic floor - blown-in cellulose R-{int(a_r)}",
-                sf, "sf", _lookup_cost(costs, "insulation", "blown_cellulose", 0.80),
+                sf, "sf", _blown_per_sf(costs, "blown_cellulose"),
                 attic * 0.01, rate,
             ))
         elif a_type == "batt":
@@ -579,7 +590,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 items.append(_item(
                     "Floor Insulation",
                     f"Floor over unconditioned - R-{int(fu_r)} blown insulation",
-                    sf, "sf", _lookup_cost(costs, "insulation", "blown_cellulose", 0.80),
+                    sf, "sf", _blown_per_sf(costs, "blown_cellulose"),
                     fu_area * 0.02, rate,
                 ))
             # Support material (wire hangers or netting)

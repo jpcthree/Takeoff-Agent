@@ -159,6 +159,7 @@ export function pythonLineItemToSpreadsheet(
     amount,
     grossProfit,
     gpm,
+    codeRequirement: item.code_requirement || '',
     sortOrder: index,
     isUserAdded: false,
   };

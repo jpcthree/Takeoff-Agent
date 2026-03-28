@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2, FileText, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FileUploadZone } from './FileUploadZone';
@@ -10,7 +10,7 @@ import { AVAILABLE_TRADES } from '@/lib/api/python-service';
 const STEPS = [
   { label: 'Project Details' },
   { label: 'Select Trades' },
-  { label: 'Upload Plans' },
+  { label: 'Input Method' },
 ];
 
 export interface ProjectFormData {
@@ -20,6 +20,7 @@ export interface ProjectFormData {
   buildingType: string;
   selectedTrades: string[];
   files: File[];
+  inputMethod: 'plans' | 'address';
 }
 
 interface CreateProjectWizardProps {
@@ -87,6 +88,7 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
     buildingType: 'residential',
     selectedTrades: AVAILABLE_TRADES.map((t) => t.id), // all selected by default
     files: [],
+    inputMethod: 'plans',
   });
 
   const updateField = <K extends keyof ProjectFormData>(
@@ -109,6 +111,9 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
   const canAdvance = () => {
     if (step === 0) return formData.name.trim().length > 0;
     if (step === 1) return formData.selectedTrades.length > 0;
+    if (step === 2 && formData.inputMethod === 'address') {
+      return formData.address.trim().length > 0;
+    }
     return true;
   };
 
@@ -239,22 +244,94 @@ function CreateProjectWizard({ onComplete }: CreateProjectWizardProps) {
         {step === 2 && (
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">
-              Upload Plans
+              How would you like to estimate?
             </h2>
             <p className="text-sm text-gray-500 mb-6">
-              Upload your blueprint PDFs. You can also upload or re-upload plans later in the project workspace.
+              Upload construction plans for a detailed takeoff, or estimate from the property address for existing homes.
             </p>
-            <FileUploadZone
-              files={formData.files}
-              onFilesChange={(files) => updateField('files', files)}
-            />
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-700">
-                <strong>What happens next:</strong> Your project will open in the
-                workspace where you can view your plans, run AI analysis to extract
-                building details, and generate cost estimates for your selected trades.
-              </p>
+
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              {/* Upload Plans card */}
+              <button
+                type="button"
+                onClick={() => updateField('inputMethod', 'plans')}
+                className={[
+                  'flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all text-center cursor-pointer',
+                  formData.inputMethod === 'plans'
+                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                    : 'border-gray-200 hover:border-gray-300 bg-white',
+                ].join(' ')}
+              >
+                <div className={[
+                  'flex h-12 w-12 items-center justify-center rounded-full',
+                  formData.inputMethod === 'plans' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-400',
+                ].join(' ')}>
+                  <FileText className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-gray-900">Upload Plans</div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Upload blueprint PDFs for AI-powered analysis and takeoff
+                  </p>
+                </div>
+              </button>
+
+              {/* Estimate from Address card */}
+              <button
+                type="button"
+                onClick={() => updateField('inputMethod', 'address')}
+                className={[
+                  'flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all text-center cursor-pointer',
+                  formData.inputMethod === 'address'
+                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                    : 'border-gray-200 hover:border-gray-300 bg-white',
+                ].join(' ')}
+              >
+                <div className={[
+                  'flex h-12 w-12 items-center justify-center rounded-full',
+                  formData.inputMethod === 'address' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-400',
+                ].join(' ')}>
+                  <MapPin className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-gray-900">Estimate from Address</div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Generate an estimate using property data for existing homes
+                  </p>
+                </div>
+              </button>
             </div>
+
+            {/* Conditional content below the cards */}
+            {formData.inputMethod === 'plans' && (
+              <>
+                <FileUploadZone
+                  files={formData.files}
+                  onFilesChange={(files) => updateField('files', files)}
+                />
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                  <p className="text-xs text-blue-700">
+                    <strong>What happens next:</strong> Your project will open in the
+                    workspace where you can view your plans, run AI analysis to extract
+                    building details, and generate cost estimates for your selected trades.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {formData.inputMethod === 'address' && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm font-medium text-amber-800 mb-1">
+                  Estimating from address
+                </p>
+                <p className="text-xs text-amber-700">
+                  {formData.address
+                    ? <>We&apos;ll look up property data for <strong>{formData.address}</strong> and generate material estimates based on the building&apos;s characteristics.</>
+                    : <>Go back to Step 1 and enter a property address to use this option.</>
+                  }
+                </p>
+              </div>
+            )}
           </div>
         )}
 

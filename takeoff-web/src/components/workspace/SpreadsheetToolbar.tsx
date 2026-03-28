@@ -29,17 +29,28 @@ function SpreadsheetToolbar({
     if (state.rawLineItems.length === 0) return;
     setIsExporting(true);
     try {
+      // For address-based estimates, include notes and images in the export
+      const options = state.projectType === 'address'
+        ? {
+            notes: state.propertyNotes,
+            insulation_notes: state.insulationNotes,
+            images: state.propertyImages,
+          }
+        : undefined;
+
       await exportXlsx(
         state.rawLineItems,
         state.projectMeta.name || 'Estimate',
-        state.projectMeta.address
+        state.projectMeta.address,
+        undefined,
+        options
       );
     } catch (err) {
       console.error('Export failed:', err);
     } finally {
       setIsExporting(false);
     }
-  }, [state.rawLineItems, state.projectMeta]);
+  }, [state.rawLineItems, state.projectMeta, state.projectType, state.propertyNotes, state.insulationNotes, state.propertyImages]);
 
   const toggleTrade = (trade: string) => {
     const current = visibleTrades ?? new Set(trades);

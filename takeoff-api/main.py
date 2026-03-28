@@ -21,7 +21,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from routers import calculate, pdf, export  # noqa: E402
+from routers import calculate, pdf, export, estimate  # noqa: E402
 
 app = FastAPI(
     title="Takeoff Agent API",
@@ -48,6 +48,7 @@ app.add_middleware(
 app.include_router(calculate.router, prefix="/calculate", tags=["Calculate"])
 app.include_router(pdf.router, prefix="/pdf", tags=["PDF"])
 app.include_router(export.router, prefix="/export", tags=["Export"])
+app.include_router(estimate.router, prefix="/estimate", tags=["Estimate"])
 
 
 @app.get("/")

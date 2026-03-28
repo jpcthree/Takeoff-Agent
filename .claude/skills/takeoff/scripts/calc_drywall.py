@@ -80,11 +80,13 @@ def _labor_rate(costs: dict) -> float:
     return costs.get("labor_rates", {}).get("drywall_finisher", 35.0)
 
 
-def _item(category, desc, qty, unit, unit_cost, labor_hrs, labor_rate) -> LineItem:
+def _item(category, desc, qty, unit, unit_cost, labor_hrs, labor_rate,
+          sheets: int = 0) -> LineItem:
     li = LineItem(
         trade="drywall", category=category, description=desc,
         quantity=round(qty, 2), unit=unit, material_unit_cost=unit_cost,
         labor_hours=round(labor_hrs, 2), labor_rate=labor_rate,
+        sheets=sheets,
     )
     li.calculate_totals()
     return li
@@ -216,15 +218,16 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         sf_with_waste = round(area * WASTE_SHEETS, 2)
         label = DW_LABELS.get(dw_type, dw_type)
         cost_key = DW_COST_KEYS.get(dw_type, "drywall_1_2_4x8")
-        cost_per_sf = _lookup_cost(costs, "drywall", cost_key) / sheet_sf
+        cost_per_sheet = _lookup_cost(costs, "drywall", cost_key)
 
         layer_note = f" ({layers} layers)" if layers > 1 else ""
         items.append(_item(
-            "Drywall Sheets",
+            "Walls",
             f"{floor_label} - {label} ({total_sheets} sheets{layer_note})",
             sf_with_waste * layers, "sf",
-            cost_per_sf,
+            cost_per_sheet,
             total_sheets * 0.05, rate,
+            sheets=total_sheets,
         ))
 
         total_wall_sheets += total_sheets
@@ -271,15 +274,16 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         sf_with_waste = round(area * WASTE_SHEETS, 2)
         label = DW_LABELS.get(dw_type, dw_type)
         cost_key = DW_COST_KEYS.get(dw_type, "drywall_1_2_4x8")
-        cost_per_sf = _lookup_cost(costs, "drywall", cost_key) / sheet_sf
+        cost_per_sheet = _lookup_cost(costs, "drywall", cost_key)
 
         layer_note = f" ({layers} layers)" if layers > 1 else ""
         items.append(_item(
-            "Drywall Sheets",
-            f"{floor_label} - Ceiling - {label} ({total_sheets} sheets{layer_note})",
+            "Ceilings",
+            f"{floor_label} - {label} ({total_sheets} sheets{layer_note})",
             sf_with_waste * layers, "sf",
-            cost_per_sf,
+            cost_per_sheet,
             total_sheets * 0.06, rate,  # slightly more labor for ceilings
+            sheets=total_sheets,
         ))
 
         total_ceiling_sheets += total_sheets

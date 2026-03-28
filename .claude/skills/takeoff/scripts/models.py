@@ -1432,9 +1432,14 @@ class LineItem:
     labor_rate: float = 0.0
     labor_total: float = 0.0
     line_total: float = 0.0
+    sheets: int = 0  # drywall sheet count (when priced per sheet)
+    code_requirement: str = ""  # building code R-value requirement (insulation)
 
     def calculate_totals(self) -> None:
-        self.material_total = round(self.quantity * self.material_unit_cost, 2)
+        if self.sheets > 0:
+            self.material_total = round(self.sheets * self.material_unit_cost, 2)
+        else:
+            self.material_total = round(self.quantity * self.material_unit_cost, 2)
         self.labor_total = round(self.labor_hours * self.labor_rate, 2)
         self.line_total = round(self.material_total + self.labor_total, 2)
 

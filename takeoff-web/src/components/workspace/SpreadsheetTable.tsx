@@ -45,6 +45,7 @@ function computeItem(
 const COLUMNS = [
   { key: 'category', label: 'Category', width: 'w-[120px]' },
   { key: 'description', label: 'Description', width: 'min-w-[200px] flex-1' },
+  { key: 'codeRequirement', label: 'Code', width: 'w-[120px]' },
   { key: 'quantity', label: 'Qty', width: 'w-[70px]', align: 'right' as const },
   { key: 'unit', label: 'Unit', width: 'w-[60px]', align: 'center' as const },
   { key: 'unitCost', label: 'Unit Cost', width: 'w-[90px]', align: 'right' as const, editable: true },
@@ -82,6 +83,8 @@ function getCellValue(item: SpreadsheetLineItem, key: string): string {
       return item.category;
     case 'description':
       return item.description;
+    case 'codeRequirement':
+      return item.codeRequirement || '';
     case 'quantity':
       return item.quantity.toLocaleString();
     case 'unit':
@@ -301,6 +304,7 @@ function SpreadsheetTable() {
                                   col.width,
                                   alignClass(col.align),
                                   isEditable && !isEditing ? 'bg-[#FFF2CC] cursor-pointer' : '',
+                                  col.key === 'codeRequirement' ? 'bg-blue-50 text-blue-800 text-[11px]' : '',
                                 ].join(' ')}
                                 onClick={() => {
                                   if (isEditable && !isEditing) {
@@ -337,6 +341,7 @@ function SpreadsheetTable() {
                       <tr className="bg-[#E2EFDA] font-semibold">
                         <td className="px-2 py-1.5 border-r border-gray-200" />
                         <td className="px-2 py-1.5 border-r border-gray-200">{getTradeLabel(trade)} Subtotal</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200" /> {/* Code */}
                         <td className="px-2 py-1.5 border-r border-gray-200" />
                         <td className="px-2 py-1.5 border-r border-gray-200" />
                         <td className="px-2 py-1.5 border-r border-gray-200" />
@@ -360,6 +365,7 @@ function SpreadsheetTable() {
               <tr className="bg-[#1F3864] text-white font-semibold">
                 <td className="px-2 py-2 border-r border-[#1a2f56]" />
                 <td className="px-2 py-2 border-r border-[#1a2f56]">Grand Total</td>
+                <td className="px-2 py-2 border-r border-[#1a2f56]" /> {/* Code */}
                 <td className="px-2 py-2 border-r border-[#1a2f56]" />
                 <td className="px-2 py-2 border-r border-[#1a2f56]" />
                 <td className="px-2 py-2 border-r border-[#1a2f56]" />

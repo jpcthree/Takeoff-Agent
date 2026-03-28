@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import {
   Panel,
@@ -8,6 +8,7 @@ import {
   Separator,
 } from 'react-resizable-panels';
 import { PdfViewer } from '@/components/workspace/PdfViewer';
+import { PropertyInfoPanel } from '@/components/workspace/PropertyInfoPanel';
 import { SpreadsheetTable } from '@/components/workspace/SpreadsheetTable';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -16,7 +17,8 @@ import { ProjectStoreProvider, useProjectStore } from '@/hooks/useProjectStore';
 /** Inner component that can use the store context */
 function WorkspaceInner() {
   const params = useParams();
-  const { dispatch } = useProjectStore();
+  const { dispatch, setProjectType } = useProjectStore();
+  const [inputMethod, setInputMethod] = useState<'plans' | 'address'>('plans');
 
   // Load project meta from sessionStorage (works for both local and Supabase projects)
   useEffect(() => {
@@ -35,25 +37,31 @@ function WorkspaceInner() {
             selectedTrades: meta.selectedTrades || [],
           },
         });
+        // Set the input method / project type
+        const method = meta.inputMethod === 'address' ? 'address' : 'plans';
+        setInputMethod(method);
+        setProjectType(method);
       }
     } catch {
       // Ignore parse errors
     }
-  }, [params?.id, dispatch]);
+  }, [params?.id, dispatch, setProjectType]);
+
+  const isAddressMode = inputMethod === 'address';
 
   return (
     <Group orientation="horizontal" className="h-full">
-      {/* PDF Viewer */}
-      <Panel defaultSize={20} minSize={15}>
+      {/* Left panel: PDF Viewer or Property Info */}
+      <Panel defaultSize={isAddressMode ? 22 : 20} minSize={15}>
         <ErrorBoundary>
-          <PdfViewer />
+          {isAddressMode ? <PropertyInfoPanel /> : <PdfViewer />}
         </ErrorBoundary>
       </Panel>
 
       <Separator className="w-1 bg-gray-200 hover:bg-primary/40 transition-colors" />
 
       {/* Spreadsheet */}
-      <Panel defaultSize={55} minSize={30}>
+      <Panel defaultSize={isAddressMode ? 53 : 55} minSize={30}>
         <ErrorBoundary>
           <SpreadsheetTable />
         </ErrorBoundary>

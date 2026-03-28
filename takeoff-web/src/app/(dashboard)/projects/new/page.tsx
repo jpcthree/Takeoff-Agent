@@ -25,10 +25,11 @@ export default function NewProjectPage() {
           clientName: data.clientName,
           buildingType: data.buildingType,
           selectedTrades: data.selectedTrades,
+          inputMethod: data.inputMethod,
         })
       );
       // Store PDF files in IndexedDB so workspace can pick them up
-      if (data.files.length > 0) {
+      if (data.inputMethod === 'plans' && data.files.length > 0) {
         await storePdfFiles(id, data.files);
       }
       router.push(`/project/${id}`);
@@ -67,11 +68,12 @@ export default function NewProjectPage() {
               clientName: data.clientName,
               buildingType: data.buildingType,
               selectedTrades: data.selectedTrades,
+              inputMethod: data.inputMethod,
             })
           );
 
           // Store PDFs in IndexedDB for the workspace to load
-          if (data.files.length > 0) {
+          if (data.inputMethod === 'plans' && data.files.length > 0) {
             await storePdfFiles(project.id, data.files);
           }
           router.push(`/project/${project.id}`);

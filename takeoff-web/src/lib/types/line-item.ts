@@ -26,6 +26,9 @@ export interface SpreadsheetLineItem {
   /** Gross profit margin as a decimal (0-1) */
   gpm: number;
 
+  // Building code requirement (insulation items only)
+  codeRequirement?: string;
+
   // Metadata
   sortOrder: number;
   isUserAdded: boolean;

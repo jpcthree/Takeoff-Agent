@@ -20,6 +20,47 @@ export interface LineItemDict {
   labor_rate: number;
   labor_total: number;
   line_total: number;
+  code_requirement?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Address Estimate Types
+// ---------------------------------------------------------------------------
+
+export interface NoteSection {
+  title: string;
+  lines: string[];
+}
+
+export interface PropertyInfo {
+  address: string;
+  lat: number;
+  lng: number;
+  year_built: number | null;
+  total_sqft: number | null;
+  stories: number;
+  bedrooms: number;
+  bathrooms: number;
+  basement: string;
+  basement_sqft: number;
+  foundation_type: string;
+  roof_type: string;
+  roof_material: string;
+  total_value: number;
+  land_value: number;
+  improvement_value: number;
+  sources: Record<string, string>;
+  warnings: string[];
+}
+
+export interface EstimateFromAddressResponse {
+  line_items: LineItemDict[];
+  property_data: PropertyInfo;
+  notes: NoteSection[];
+  insulation_notes: NoteSection[];
+  assumptions: string[];
+  images: Record<string, string | null>;
+  roof_classification: Record<string, string>;
 }
 
 export interface CalculateAllResponse {
@@ -128,7 +169,12 @@ export async function exportXlsx(
   lineItems: LineItemDict[],
   projectName: string = '',
   projectAddress: string = '',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: {
+    notes?: NoteSection[];
+    insulation_notes?: NoteSection[];
+    images?: Record<string, string | null>;
+  }
 ): Promise<void> {
   const res = await fetch('/api/export', {
     method: 'POST',
@@ -137,6 +183,9 @@ export async function exportXlsx(
       line_items: lineItems,
       project_name: projectName,
       project_address: projectAddress,
+      ...(options?.notes && { notes: options.notes }),
+      ...(options?.insulation_notes && { insulation_notes: options.insulation_notes }),
+      ...(options?.images && { images: options.images }),
     }),
     signal,
   });
@@ -201,6 +250,30 @@ export async function listTrades(): Promise<{ trades: string[] }> {
   return {
     trades: AVAILABLE_TRADES.map((t) => t.id),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Address Estimate — via /api/estimate proxy
+// ---------------------------------------------------------------------------
+
+export async function estimateFromAddress(
+  address: string,
+  climateZone: string = '5B',
+  signal?: AbortSignal
+): Promise<EstimateFromAddressResponse> {
+  const res = await fetch('/api/estimate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, climate_zone: climateZone }),
+    signal,
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(error.error || `Estimate failed: ${res.status}`);
+  }
+
+  return res.json();
 }
 
 /**

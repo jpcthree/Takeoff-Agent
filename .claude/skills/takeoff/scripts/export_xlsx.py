@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from openpyxl import Workbook
+from openpyxl.workbook.views import BookView
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill, numbers
 from openpyxl.utils import get_column_letter
 
@@ -45,25 +46,26 @@ _THIN_BORDER = Border(
 
 _INPUT_FILL = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # light orange
 
-# Manual-input columns (1-indexed): E=Unit Cost, H=Labor Rate, L=Unit Price
-_INPUT_COLUMNS = {5, 8, 12}
+# Manual-input columns (1-indexed): F=Unit Cost, I=Labor Rate, M=Unit Price
+_INPUT_COLUMNS = {6, 9, 13}
 
 _COLUMNS = [
-    ("Category", 20),                   # A  (1)
-    ("Description", 40),                # B  (2)
+    ("Category", 18),                   # A  (1)
+    ("Description", 42),                # B  (2)
     ("Qty", 10),                        # C  (3)
-    ("Unit", 8),                        # D  (4)
-    ("Unit Cost", 14),                  # E  (5)  ← manual input
-    ("Material Total", 14),             # F  (6)
-    ("Material %", 12),                 # G  (7)
-    ("Labor Rate", 12),                 # H  (8)  ← manual input (%)
-    ("Labor Total", 14),                # I  (9)
-    ("Labor %", 12),                    # J  (10)
-    ("Labor + Materials Cost", 22),     # K  (11)
-    ("Unit Price", 14),                 # L  (12) ← manual input
-    ("Amount", 14),                     # M  (13)
-    ("Gross Profit", 14),               # N  (14)
-    ("GPM", 10),                        # O  (15)
+    ("Sheets", 8),                      # D  (4)
+    ("Unit", 8),                        # E  (5)
+    ("Unit Cost", 12),                  # F  (6)  ← manual input
+    ("Mat Total", 13),                  # G  (7)
+    ("Mat %", 8),                       # H  (8)
+    ("Labor Rate", 12),                 # I  (9)  ← manual input (%)
+    ("Labor Total", 13),                # J  (10)
+    ("Labor %", 8),                     # K  (11)
+    ("L+M Cost", 13),                   # L  (12)
+    ("Unit Price", 12),                 # M  (13) ← manual input
+    ("Amount", 13),                     # N  (14)
+    ("Gross Profit", 13),               # O  (15)
+    ("GPM", 8),                         # P  (16)
 ]
 
 
@@ -84,34 +86,42 @@ def _apply_cell_style(cell, font=None, fill=None, alignment=None, fmt=None, bord
         cell.border = border
 
 
-def _write_header_row(ws, row: int):
+def _write_header_row(ws, row: int, hide_sheets: bool = False):
     for col_idx, (title, width) in enumerate(_COLUMNS, start=1):
         cell = ws.cell(row=row, column=col_idx, value=title)
         _apply_cell_style(cell, _HEADER_FONT, _HEADER_FILL, _HEADER_ALIGN, border=_THIN_BORDER)
-        ws.column_dimensions[get_column_letter(col_idx)].width = width
+        if col_idx == 4 and hide_sheets:
+            ws.column_dimensions[get_column_letter(col_idx)].width = 0
+            ws.column_dimensions[get_column_letter(col_idx)].hidden = True
+        else:
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
 
 
 def _write_line_item(ws, row: int, item: LineItem):
-    # A=Category, B=Description, C=Qty, D=Unit, E=Unit Cost, F=Material Total,
-    # G=Material %, H=Labor Rate (%), I=Labor Total, J=Labor %, K=L+M Cost,
-    # L=Unit Price, M=Amount, N=Gross Profit, O=GPM
+    # A=Category, B=Description, C=Qty, D=Sheets, E=Unit, F=Unit Cost,
+    # G=Material Total, H=Material %, I=Labor Rate (%), J=Labor Total,
+    # K=Labor %, L=L+M Cost, M=Unit Price, N=Amount, O=Gross Profit, P=GPM
     r = row
+    sheets_val = item.sheets if item.sheets > 0 else ""
+    # Material Total: use Sheets×UnitCost when sheets present, else Qty×UnitCost
+    mat_formula = f"=IF(D{r}>0,D{r}*F{r},C{r}*F{r})"
     values = [
         item.category,                          # A (1)
         item.description,                       # B (2)
         item.quantity,                          # C (3)
-        item.unit,                              # D (4)
-        0,                                      # E (5) Unit Cost — manual input
-        f"=C{r}*E{r}",                         # F (6) Material Total
-        f'=IF(M{r}=0,"",F{r}/M{r})',           # G (7) Material %
-        0,                                      # H (8) Labor Rate — manual input (%)
-        f"=H{r}*M{r}",                         # I (9) Labor Total = Labor Rate × Amount
-        f'=IF(M{r}=0,"",I{r}/M{r})',           # J (10) Labor %
-        f"=F{r}+I{r}",                         # K (11) Labor + Materials Cost
-        0,                                      # L (12) Unit Price — manual input
-        f"=C{r}*L{r}",                         # M (13) Amount
-        f"=M{r}-K{r}",                         # N (14) Gross Profit
-        f'=IF(M{r}=0,"",N{r}/M{r})',           # O (15) GPM
+        sheets_val,                             # D (4) Sheets
+        item.unit,                              # E (5)
+        0,                                      # F (6) Unit Cost — manual input
+        mat_formula,                            # G (7) Material Total
+        f'=IF(N{r}=0,"",G{r}/N{r})',           # H (8) Material %
+        0,                                      # I (9) Labor Rate — manual input (%)
+        f"=I{r}*N{r}",                         # J (10) Labor Total = Labor Rate × Amount
+        f'=IF(N{r}=0,"",J{r}/N{r})',           # K (11) Labor %
+        f"=G{r}+J{r}",                         # L (12) Labor + Materials Cost
+        0,                                      # M (13) Unit Price — manual input
+        f"=IF(D{r}>0,D{r}*M{r},C{r}*M{r})",     # N (14) Amount (per sheet when sheets present)
+        f"=N{r}-L{r}",                         # O (15) Gross Profit
+        f'=IF(N{r}=0,"",O{r}/N{r})',           # P (16) GPM
     ]
     for col_idx, val in enumerate(values, start=1):
         cell = ws.cell(row=row, column=col_idx, value=val)
@@ -121,55 +131,62 @@ def _write_line_item(ws, row: int, item: LineItem):
         if col_idx in _INPUT_COLUMNS:
             cell.fill = _INPUT_FILL
         # Number formats
-        if col_idx in (5, 6, 9, 11, 12, 13, 14):
+        if col_idx in (6, 7, 10, 12, 13, 14, 15):
             cell.number_format = _CURRENCY_FMT
-        elif col_idx == 3:
+        elif col_idx in (3, 4):
             cell.number_format = _NUMBER_FMT
-        elif col_idx in (7, 8, 10, 15):
+        elif col_idx in (8, 9, 11, 16):
             cell.number_format = _PERCENT_FMT
 
 
 def _write_subtotal_row(ws, row: int, trade: str, mat_total: float, lab_total: float,
-                        grand: float, first_data_row: int = 0, last_data_row: int = 0):
-    # New layout: F=MatTotal, I=LabTotal, K=L+MCost, M=Amount, N=GrossProfit
+                        grand: float, first_data_row: int = 0, last_data_row: int = 0,
+                        has_sheets: bool = False):
+    # Layout: G=MatTotal, J=LabTotal, L=L+MCost, N=Amount, O=GrossProfit
     cell = ws.cell(row=row, column=1, value=f"{trade} Subtotal")
     _apply_cell_style(cell, _SUBTOTAL_FONT, _SUBTOTAL_FILL, border=_THIN_BORDER)
-    for col_idx in range(2, 6):
+    for col_idx in range(2, 7):
         c = ws.cell(row=row, column=col_idx)
         _apply_cell_style(c, fill=_SUBTOTAL_FILL, border=_THIN_BORDER)
+
+    # Sheets total (column D=4) if trade has sheet items
+    if has_sheets and first_data_row > 0 and last_data_row > 0:
+        fr, lr = first_data_row, last_data_row
+        c = ws.cell(row=row, column=4, value=f"=SUM(D{fr}:D{lr})")
+        _apply_cell_style(c, _SUBTOTAL_FONT, _SUBTOTAL_FILL, fmt=_NUMBER_FMT, border=_THIN_BORDER)
 
     if first_data_row > 0 and last_data_row > 0:
         fr, lr = first_data_row, last_data_row
         formulas = [
-            (6,  f"=SUM(F{fr}:F{lr})"),     # Material Total
-            (9,  f"=SUM(I{fr}:I{lr})"),     # Labor Total
-            (11, f"=SUM(K{fr}:K{lr})"),     # Labor + Materials Cost
-            (13, f"=SUM(M{fr}:M{lr})"),     # Amount
-            (14, f"=SUM(N{fr}:N{lr})"),     # Gross Profit
+            (7,  f"=SUM(G{fr}:G{lr})"),     # Material Total
+            (10, f"=SUM(J{fr}:J{lr})"),     # Labor Total
+            (12, f"=SUM(L{fr}:L{lr})"),     # Labor + Materials Cost
+            (14, f"=SUM(N{fr}:N{lr})"),     # Amount
+            (15, f"=SUM(O{fr}:O{lr})"),     # Gross Profit
         ]
     else:
         formulas = [
-            (6, mat_total), (9, lab_total), (11, grand),
-            (13, grand), (14, 0),
+            (7, mat_total), (10, lab_total), (12, grand),
+            (14, grand), (15, 0),
         ]
     for col_idx, val in formulas:
         c = ws.cell(row=row, column=col_idx, value=val)
         _apply_cell_style(c, _SUBTOTAL_FONT, _SUBTOTAL_FILL, fmt=_CURRENCY_FMT, border=_THIN_BORDER)
 
     # Material % = Material Total / Amount
-    c = ws.cell(row=row, column=7, value=f'=IF(M{row}=0,"",F{row}/M{row})')
+    c = ws.cell(row=row, column=8, value=f'=IF(N{row}=0,"",G{row}/N{row})')
     _apply_cell_style(c, _SUBTOTAL_FONT, _SUBTOTAL_FILL, fmt=_PERCENT_FMT, border=_THIN_BORDER)
 
     # Labor % = Labor Total / Amount
-    c = ws.cell(row=row, column=10, value=f'=IF(M{row}=0,"",I{row}/M{row})')
+    c = ws.cell(row=row, column=11, value=f'=IF(N{row}=0,"",J{row}/N{row})')
     _apply_cell_style(c, _SUBTOTAL_FONT, _SUBTOTAL_FILL, fmt=_PERCENT_FMT, border=_THIN_BORDER)
 
     # GPM = Gross Profit / Amount
-    c = ws.cell(row=row, column=15, value=f'=IF(M{row}=0,"",N{row}/M{row})')
+    c = ws.cell(row=row, column=16, value=f'=IF(N{row}=0,"",O{row}/N{row})')
     _apply_cell_style(c, _SUBTOTAL_FONT, _SUBTOTAL_FILL, fmt=_PERCENT_FMT, border=_THIN_BORDER)
 
     # Fill remaining cells (no formula, just styled)
-    for col_idx in (8, 12):
+    for col_idx in (9, 13):
         c = ws.cell(row=row, column=col_idx)
         _apply_cell_style(c, fill=_SUBTOTAL_FILL, border=_THIN_BORDER)
 
@@ -184,6 +201,8 @@ def export_estimate(
     project_name: str = "",
     project_address: str = "",
     notes: list[tuple[str, list[str]]] | None = None,
+    insulation_notes: list[tuple[str, list[str]]] | None = None,
+    images: dict[str, str] | None = None,
 ) -> str:
     """
     Export line items to a formatted .xlsx workbook.
@@ -193,22 +212,35 @@ def export_estimate(
         output_path: Path for the output .xlsx file.
         project_name: Optional project name for the title sheet.
         project_address: Optional address for the title sheet.
-        notes: Optional list of (section_title, [bullet_items]) to add below estimate.
+        notes: Optional list of (section_title, [bullet_items]) for property/trade sheets.
+        insulation_notes: Optional separate notes for insulation sheet (includes code reqs).
+        images: Optional dict of image paths {"street_view": "/path.jpg", "satellite": "/path.jpg"}.
 
     Returns:
         The output file path.
     """
     wb = Workbook()
 
+    # Set window size so the file doesn't open stretched across the entire monitor
+    # Values are in twips (1/20 of a point). ~15000x10000 ≈ a compact window.
+    wb.views = [BookView(windowWidth=15000, windowHeight=10000)]
+
     # Remove the default blank sheet created by Workbook()
     wb.remove(wb.active)
 
-    # ---- Per-trade sheets (first) ----
+    # ---- Property sheet with images and notes ----
+    if images and any(images.values()):
+        _build_property_sheet(wb, project_name, images, notes=notes)
+
+    # ---- Per-trade sheets ----
     by_trade = _group_by_trade(line_items)
     for trade, items in by_trade.items():
         safe_name = trade.replace("/", "-")[:31]  # Excel sheet name limit
         ws_trade = wb.create_sheet(safe_name)
-        _build_trade_sheet(ws_trade, trade, items, notes=notes)
+        if trade == "insulation":
+            _build_insulation_sheet(ws_trade, items, notes=insulation_notes or notes)
+        else:
+            _build_trade_sheet(ws_trade, trade, items, notes=notes)
 
     # ---- Detail sheet (last) ----
     ws_detail = wb.create_sheet("Detail")
@@ -217,6 +249,62 @@ def export_estimate(
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     wb.save(output_path)
     return output_path
+
+
+def _build_property_sheet(wb, project_name: str, images: dict[str, str],
+                          notes: list[tuple[str, list[str]]] | None = None):
+    """Create a 'Property' sheet with embedded images and notes."""
+    try:
+        from openpyxl.drawing.image import Image as XlImage
+    except ImportError:
+        XlImage = None
+
+    ws = wb.create_sheet("Property", 0)  # Insert as first sheet
+
+    # Title
+    ws.merge_cells("A1:H1")
+    title_cell = ws.cell(row=1, column=1, value=project_name or "Property Overview")
+    title_cell.font = Font(name="Calibri", bold=True, size=16, color="1F3864")
+    title_cell.alignment = Alignment(horizontal="center")
+
+    row = 3
+
+    # Embed images
+    if XlImage:
+        img_labels = [
+            ("street_view", "Street View"),
+            ("satellite", "Satellite / Aerial View"),
+        ]
+        for key, label in img_labels:
+            path = images.get(key, "")
+            if not path or not os.path.isfile(path):
+                continue
+            cell = ws.cell(row=row, column=1, value=label)
+            cell.font = Font(name="Calibri", bold=True, size=12, color="1F3864")
+            row += 1
+            try:
+                img = XlImage(path)
+                max_w = 500
+                if img.width > max_w:
+                    ratio = max_w / img.width
+                    img.width = max_w
+                    img.height = int(img.height * ratio)
+                ws.add_image(img, f"A{row}")
+                rows_for_img = max(2, int(img.height / 18))
+                row += rows_for_img + 1
+            except Exception as e:
+                ws.cell(row=row, column=1, value=f"(Image could not be embedded: {e})")
+                row += 2
+
+    # Notes sections below images
+    if notes:
+        row += 1
+        _write_notes(ws, row - 2, notes)
+
+    # Set column widths for readability
+    ws.column_dimensions["A"].width = 50
+    ws.sheet_properties.pageSetUpPr = None  # reset any page setup
+    ws.sheet_view.zoomScale = 90
 
 
 _NOTE_TITLE_FONT = Font(name="Calibri", bold=True, size=11, color="1F3864")
@@ -234,7 +322,7 @@ def _write_notes(ws, start_row: int, notes: list[tuple[str, list[str]]]) -> int:
             cell = ws.cell(row=row, column=1, value=f"  •  {bullet}")
             cell.font = _NOTE_BODY_FONT
             # Merge across columns for readability
-            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
             cell.alignment = Alignment(wrap_text=True, vertical="top")
             row += 1
         row += 1  # blank row between sections
@@ -251,7 +339,7 @@ def _group_by_trade(items: list[LineItem]) -> dict[str, list[LineItem]]:
 def _build_summary_sheet(ws, items: list[LineItem], project_name: str, address: str):
     """High-level summary: one row per trade with totals."""
     # Title
-    ws.merge_cells("A1:D1")
+    ws.merge_cells("A1:E1")
     title_cell = ws.cell(row=1, column=1, value="Construction Cost Estimate")
     _apply_cell_style(title_cell, Font(name="Calibri", bold=True, size=16, color="1F3864"))
 
@@ -331,8 +419,9 @@ def _build_detail_sheet(ws, items: list[LineItem], notes: list[tuple[str, list[s
             row += 1
         last_data_row = row - 1
 
+        trade_has_sheets = any(getattr(i, "sheets", 0) > 0 for i in trade_items)
         _write_subtotal_row(ws, row, trade.title(), mat_total, lab_total, line_total,
-                            first_data_row, last_data_row)
+                            first_data_row, last_data_row, has_sheets=trade_has_sheets)
         subtotal_rows.append(row)
         row += 2  # blank row between trades
 
@@ -343,25 +432,116 @@ def _build_detail_sheet(ws, items: list[LineItem], notes: list[tuple[str, list[s
 
     cell = ws.cell(row=row, column=1, value="GRAND TOTAL")
     _apply_cell_style(cell, _GRAND_TOTAL_FONT, _GRAND_TOTAL_FILL, border=_THIN_BORDER)
-    for col_idx in range(2, 6):
+    for col_idx in range(2, 7):
         _apply_cell_style(ws.cell(row=row, column=col_idx), fill=_GRAND_TOTAL_FILL, border=_THIN_BORDER)
-    # Grand total formulas — sum subtotal rows: F=MatTotal, I=LabTotal, K=L+MCost, M=Amount, N=GP
-    for col_idx, col_letter in [(6, "F"), (9, "I"), (11, "K"), (13, "M"), (14, "N")]:
+    # Grand total formulas — sum subtotal rows: G=MatTotal, J=LabTotal, L=L+MCost, N=Amount, O=GP
+    for col_idx, col_letter in [(7, "G"), (10, "J"), (12, "L"), (14, "N"), (15, "O")]:
         refs = "+".join(f"{col_letter}{r}" for r in subtotal_rows)
         c = ws.cell(row=row, column=col_idx, value=f"={refs}")
         _apply_cell_style(c, _GRAND_TOTAL_FONT, _GRAND_TOTAL_FILL, fmt=_CURRENCY_FMT, border=_THIN_BORDER)
     # Material % grand total
-    c = ws.cell(row=row, column=7, value=f'=IF(M{row}=0,"",F{row}/M{row})')
+    c = ws.cell(row=row, column=8, value=f'=IF(N{row}=0,"",G{row}/N{row})')
     _apply_cell_style(c, _GRAND_TOTAL_FONT, _GRAND_TOTAL_FILL, fmt=_PERCENT_FMT, border=_THIN_BORDER)
     # Labor % grand total
-    c = ws.cell(row=row, column=10, value=f'=IF(M{row}=0,"",I{row}/M{row})')
+    c = ws.cell(row=row, column=11, value=f'=IF(N{row}=0,"",J{row}/N{row})')
     _apply_cell_style(c, _GRAND_TOTAL_FONT, _GRAND_TOTAL_FILL, fmt=_PERCENT_FMT, border=_THIN_BORDER)
     # GPM grand total
-    c = ws.cell(row=row, column=15, value=f'=IF(M{row}=0,"",N{row}/M{row})')
+    c = ws.cell(row=row, column=16, value=f'=IF(N{row}=0,"",O{row}/N{row})')
     _apply_cell_style(c, _GRAND_TOTAL_FONT, _GRAND_TOTAL_FILL, fmt=_PERCENT_FMT, border=_THIN_BORDER)
     # Fill remaining cells
-    for col_idx in (8, 12):
+    for col_idx in (9, 13):
         _apply_cell_style(ws.cell(row=row, column=col_idx), fill=_GRAND_TOTAL_FILL, border=_THIN_BORDER)
+
+    # Zoom
+    ws.sheet_view.zoomScale = 90
+
+    # Notes below the table
+    if notes:
+        _write_notes(ws, row, notes)
+
+
+_CODE_FILL = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")  # light blue
+
+
+def _build_insulation_sheet(ws, items: list[LineItem],
+                            notes: list[tuple[str, list[str]]] | None = None):
+    """Custom insulation sheet with a dedicated Code column for R-value requirements."""
+    # Insulation-specific columns (simpler than full trade sheet)
+    ins_cols = [
+        ("Category", 20),       # A
+        ("Description", 48),    # B
+        ("Qty", 12),            # C
+        ("Unit", 8),            # D
+        ("Code", 28),           # E — building code R-value requirement
+        ("Unit Cost", 12),      # F — manual input
+        ("Material Total", 14), # G
+        ("Unit Price", 12),     # H — manual input
+        ("Amount", 14),         # I
+    ]
+
+    # Title
+    ws.merge_cells("A1:E1")
+    title = ws.cell(row=1, column=1, value="Insulation Estimate")
+    _apply_cell_style(title, Font(name="Calibri", bold=True, size=14, color="1F3864"))
+
+    # Header row
+    row = 3
+    for col_idx, (col_title, width) in enumerate(ins_cols, start=1):
+        cell = ws.cell(row=row, column=col_idx, value=col_title)
+        _apply_cell_style(cell, _HEADER_FONT, _HEADER_FILL, _HEADER_ALIGN, border=_THIN_BORDER)
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    # Data rows
+    row = 4
+    first_data_row = row
+    for item in items:
+        r = row
+        values = [
+            item.category,                          # A
+            item.description,                       # B
+            item.quantity,                           # C
+            item.unit,                              # D
+            getattr(item, "code_requirement", ""),   # E — Code
+            0,                                      # F — Unit Cost (manual)
+            f"=C{r}*F{r}",                         # G — Material Total
+            0,                                      # H — Unit Price (manual)
+            f"=C{r}*H{r}",                         # I — Amount
+        ]
+        for col_idx, val in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col_idx, value=val)
+            cell.border = _THIN_BORDER
+            cell.alignment = Alignment(vertical="center")
+            # Orange fill for manual-input columns
+            if col_idx in (6, 8):
+                cell.fill = _INPUT_FILL
+            # Light blue fill for Code column
+            if col_idx == 5:
+                cell.fill = _CODE_FILL
+                cell.font = Font(name="Calibri", bold=True, size=10, color="1F3864")
+            # Number formats
+            if col_idx == 3:
+                cell.number_format = _NUMBER_FMT
+            elif col_idx in (6, 7, 8, 9):
+                cell.number_format = _CURRENCY_FMT
+        row += 1
+
+    last_data_row = row - 1
+
+    # Subtotal row
+    row += 1
+    cell = ws.cell(row=row, column=1, value="Insulation Subtotal")
+    _apply_cell_style(cell, _SUBTOTAL_FONT, _SUBTOTAL_FILL, border=_THIN_BORDER)
+    for col_idx in range(2, len(ins_cols) + 1):
+        _apply_cell_style(ws.cell(row=row, column=col_idx), fill=_SUBTOTAL_FILL, border=_THIN_BORDER)
+    # Sum formulas
+    for col_idx in (7, 9):  # G=Material Total, I=Amount
+        col_letter = get_column_letter(col_idx)
+        cell = ws.cell(row=row, column=col_idx,
+                       value=f"=SUM({col_letter}{first_data_row}:{col_letter}{last_data_row})")
+        _apply_cell_style(cell, _SUBTOTAL_FONT, _SUBTOTAL_FILL, fmt=_CURRENCY_FMT, border=_THIN_BORDER)
+
+    # Zoom
+    ws.sheet_view.zoomScale = 90
 
     # Notes below the table
     if notes:
@@ -371,12 +551,16 @@ def _build_detail_sheet(ws, items: list[LineItem], notes: list[tuple[str, list[s
 def _build_trade_sheet(ws, trade: str, items: list[LineItem],
                        notes: list[tuple[str, list[str]]] | None = None):
     """Individual trade sheet with just that trade's items."""
+    # Detect if this trade has sheet items (drywall)
+    has_sheets = any(getattr(item, "sheets", 0) > 0 for item in items)
+    hide_sheets = not has_sheets
+
     # Trade title
-    ws.merge_cells("A1:D1")
+    ws.merge_cells("A1:E1")
     title = ws.cell(row=1, column=1, value=f"{trade.title()} Estimate")
     _apply_cell_style(title, Font(name="Calibri", bold=True, size=14, color="1F3864"))
 
-    _write_header_row(ws, 3)
+    _write_header_row(ws, 3, hide_sheets=hide_sheets)
     row = 4
     first_data_row = row
 
@@ -392,8 +576,26 @@ def _build_trade_sheet(ws, trade: str, items: list[LineItem],
     last_data_row = row - 1
 
     row += 1
+    subtotal_row = row
     _write_subtotal_row(ws, row, trade.title(), mat_total, lab_total, line_total,
-                        first_data_row, last_data_row)
+                        first_data_row, last_data_row, has_sheets=has_sheets)
+
+    # Price per sheet summary row (only for trades with sheet items)
+    if has_sheets:
+        row += 1
+        # D{subtotal_row} = total sheets, N{subtotal_row} = total amount
+        c = ws.cell(row=row, column=1, value="Price Per Sheet")
+        _apply_cell_style(c, _SUBTOTAL_FONT, border=_THIN_BORDER)
+        for col_idx in range(2, len(_COLUMNS) + 1):
+            _apply_cell_style(ws.cell(row=row, column=col_idx), border=_THIN_BORDER)
+        # Formula: Total Amount / Total Sheets
+        sr = subtotal_row
+        c = ws.cell(row=row, column=13,
+                    value=f'=IF(D{sr}=0,"",N{sr}/D{sr})')
+        _apply_cell_style(c, _SUBTOTAL_FONT, fmt=_CURRENCY_FMT, border=_THIN_BORDER)
+
+    # Zoom
+    ws.sheet_view.zoomScale = 90
 
     # Notes below the table
     if notes:

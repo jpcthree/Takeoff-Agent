@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import type { PdfPage, LineItemDict } from '@/lib/api/python-service';
+import type { PdfPage, LineItemDict, NoteSection, PropertyInfo } from '@/lib/api/python-service';
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +47,22 @@ export interface ProjectState {
   error: string | null;
   /** Analysis progress messages */
   analysisMessages: string[];
+
+  // ── Address-based estimate fields ──
+  /** Whether this project uses plans or address-based estimation */
+  projectType: 'plans' | 'address';
+  /** Property data from address lookup */
+  propertyData: PropertyInfo | null;
+  /** Base64-encoded property images */
+  propertyImages: Record<string, string | null>;
+  /** Notes for property sheet */
+  propertyNotes: NoteSection[];
+  /** Notes for insulation sheet (includes code requirements) */
+  insulationNotes: NoteSection[];
+  /** Heuristic assumptions made during model generation */
+  assumptions: string[];
+  /** Roof material classification from Claude Vision */
+  roofClassification: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +85,8 @@ type ProjectAction =
   | { type: 'SET_ERROR'; error: string | null }
   | { type: 'ADD_ANALYSIS_MESSAGE'; message: string }
   | { type: 'CLEAR_ANALYSIS_MESSAGES' }
+  | { type: 'SET_PROJECT_TYPE'; projectType: 'plans' | 'address' }
+  | { type: 'SET_ESTIMATE_DATA'; propertyData: PropertyInfo; propertyImages: Record<string, string | null>; propertyNotes: NoteSection[]; insulationNotes: NoteSection[]; assumptions: string[]; roofClassification: Record<string, string> }
   | { type: 'RESET' };
 
 // ---------------------------------------------------------------------------
@@ -86,6 +104,13 @@ const initialState: ProjectState = {
   analysisStatus: 'idle',
   error: null,
   analysisMessages: [],
+  projectType: 'plans',
+  propertyData: null,
+  propertyImages: {},
+  propertyNotes: [],
+  insulationNotes: [],
+  assumptions: [],
+  roofClassification: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -175,6 +200,20 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
     case 'CLEAR_ANALYSIS_MESSAGES':
       return { ...state, analysisMessages: [] };
 
+    case 'SET_PROJECT_TYPE':
+      return { ...state, projectType: action.projectType };
+
+    case 'SET_ESTIMATE_DATA':
+      return {
+        ...state,
+        propertyData: action.propertyData,
+        propertyImages: action.propertyImages,
+        propertyNotes: action.propertyNotes,
+        insulationNotes: action.insulationNotes,
+        assumptions: action.assumptions,
+        roofClassification: action.roofClassification,
+      };
+
     case 'RESET':
       return initialState;
 
@@ -205,6 +244,15 @@ interface ProjectStoreContextValue {
   setStatus: (status: AnalysisStatus) => void;
   setError: (error: string | null) => void;
   addAnalysisMessage: (message: string) => void;
+  setProjectType: (projectType: 'plans' | 'address') => void;
+  setEstimateData: (data: {
+    propertyData: PropertyInfo;
+    propertyImages: Record<string, string | null>;
+    propertyNotes: NoteSection[];
+    insulationNotes: NoteSection[];
+    assumptions: string[];
+    roofClassification: Record<string, string>;
+  }) => void;
 }
 
 const ProjectStoreContext = createContext<ProjectStoreContextValue | null>(null);
@@ -239,6 +287,15 @@ export function ProjectStoreProvider({
   const setStatus = useCallback((status: AnalysisStatus) => dispatch({ type: 'SET_STATUS', status }), []);
   const setError = useCallback((error: string | null) => dispatch({ type: 'SET_ERROR', error }), []);
   const addAnalysisMessage = useCallback((message: string) => dispatch({ type: 'ADD_ANALYSIS_MESSAGE', message }), []);
+  const setProjectType = useCallback((projectType: 'plans' | 'address') => dispatch({ type: 'SET_PROJECT_TYPE', projectType }), []);
+  const setEstimateData = useCallback((data: {
+    propertyData: PropertyInfo;
+    propertyImages: Record<string, string | null>;
+    propertyNotes: NoteSection[];
+    insulationNotes: NoteSection[];
+    assumptions: string[];
+    roofClassification: Record<string, string>;
+  }) => dispatch({ type: 'SET_ESTIMATE_DATA', ...data }), []);
 
   return (
     <ProjectStoreContext.Provider
@@ -259,6 +316,8 @@ export function ProjectStoreProvider({
         setStatus,
         setError,
         addAnalysisMessage,
+        setProjectType,
+        setEstimateData,
       }}
     >
       {children}
