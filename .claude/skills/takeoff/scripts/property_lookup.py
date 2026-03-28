@@ -592,137 +592,178 @@ def _lookup_rapidapi_property(
     address: str, lat: float, lng: float, rapidapi_key: str
 ) -> dict:
     """
-    Query RapidAPI Realtor.com (or similar) for property details + sale history.
-    Free tier: 500 req/month.  Returns dict with standard property fields.
+    Query RapidAPI 'Realty in US' (apidojo) for property details + sale history.
+    Two-step: auto-complete address → get property detail.
+    Returns dict with standard property fields.
     """
     if not rapidapi_key:
         return {}
 
+    _HEADERS = {
+        "X-RapidAPI-Key": rapidapi_key,
+        "X-RapidAPI-Host": "realty-in-us.p.rapidapi.com",
+    }
+
     try:
-        # Use the Realtor.com property search v2
-        resp = requests.get(
-            "https://realtor16.p.rapidapi.com/property",
-            params={"address": address},
-            headers={
-                "X-RapidAPI-Key": rapidapi_key,
-                "X-RapidAPI-Host": "realtor16.p.rapidapi.com",
-            },
+        # Step 1: Search for property by address to get property_id
+        print(f"    → Searching Realty-in-US for: {address}")
+        search_resp = requests.get(
+            "https://realty-in-us.p.rapidapi.com/locations/v2/auto-complete",
+            params={"input": address, "limit": "1"},
+            headers=_HEADERS,
             timeout=_TIMEOUT,
         )
-        if resp.status_code != 200:
+        if search_resp.status_code != 200:
+            print(f"    ✗ Address search failed: HTTP {search_resp.status_code}")
             return {}
-        data = resp.json()
 
-        # Navigate common response shapes
-        prop = data if isinstance(data, dict) else {}
-        # Some APIs nest under "home", "property", etc.
-        for key in ("home", "property", "data", "result"):
-            if key in prop and isinstance(prop[key], dict):
-                prop = prop[key]
-                break
+        search_data = search_resp.json()
+        autocomplete = search_data.get("autocomplete", [])
+        if not autocomplete:
+            print("    ✗ No address matches found")
+            return {}
+
+        # Extract property_id from first match
+        first_match = autocomplete[0]
+        mpr_id = first_match.get("mpr_id", "")
+        if not mpr_id:
+            print(f"    ✗ No mpr_id in match: {first_match.get('full_address', ['?'])}")
+            return {}
+
+        print(f"    → Found property ID: {mpr_id}")
+
+        # Step 2: Get property detail
+        detail_resp = requests.get(
+            "https://realty-in-us.p.rapidapi.com/properties/v3/detail",
+            params={"property_id": mpr_id},
+            headers=_HEADERS,
+            timeout=_TIMEOUT,
+        )
+        if detail_resp.status_code != 200:
+            print(f"    ✗ Property detail failed: HTTP {detail_resp.status_code}")
+            return {}
+
+        detail_data = detail_resp.json()
+
+        # Navigate to property data — typically under data.home
+        prop = detail_data
+        if isinstance(prop, dict):
+            for key in ("data", "home", "property"):
+                if key in prop and isinstance(prop[key], dict):
+                    prop = prop[key]
+            # data.home is the common nesting
+            if "home" in prop and isinstance(prop["home"], dict):
+                prop = prop["home"]
 
         result = {}
 
-        # Basic property fields
-        for src_key, dst_key, convert in [
-            ("year_built", "year_built", int),
-            ("sqft", "total_sqft", float),
-            ("beds", "bedrooms", int),
-            ("baths", "bathrooms", float),
-            ("stories", "stories", int),
-            ("lot_sqft", "lot_sqft", float),
-            ("garage", "garage", str),
-        ]:
-            val = prop.get(src_key)
-            if val:
-                try:
-                    result[dst_key] = convert(val)
-                except (ValueError, TypeError):
-                    pass
+        # ── Basic fields ──────────────────────────────────────────────
+        desc = prop.get("description", {}) or {}
+        result["year_built"] = _safe_int(desc.get("year_built") or prop.get("year_built"))
+        result["total_sqft"] = _safe_float(desc.get("sqft") or desc.get("lot_sqft") or prop.get("sqft"))
+        result["bedrooms"] = _safe_int(desc.get("beds") or prop.get("beds"))
+        result["bathrooms"] = _safe_float(desc.get("baths") or prop.get("baths"))
+        result["stories"] = _safe_int(desc.get("stories") or prop.get("stories"))
+        result["lot_sqft"] = _safe_float(desc.get("lot_sqft") or prop.get("lot_sqft"))
 
-        # Roof info
-        for roof_key in ("roof", "roofing", "roof_type", "roof_material"):
-            v = prop.get(roof_key)
-            if v and isinstance(v, str):
-                # Normalize: "Asphalt Shingle" → "asphalt_shingle"
-                normalized = v.strip().lower().replace(" ", "_")
-                if not result.get("roof_material"):
-                    result["roof_material"] = normalized
-                break
-            elif v and isinstance(v, dict):
-                # Some APIs return {"type": "...", "material": "..."}
-                if v.get("material"):
-                    result["roof_material"] = str(v["material"]).strip().lower().replace(" ", "_")
-                if v.get("type"):
-                    result["roof_type"] = str(v["type"]).strip().lower().replace(" ", "_")
-                break
+        # Garage
+        garage_val = desc.get("garage") or prop.get("garage")
+        if garage_val:
+            result["garage"] = str(garage_val)
 
-        # Alternate field names
-        if not result.get("total_sqft"):
-            for alt in ("building_size", "sqft_raw", "living_area"):
-                v = prop.get(alt)
-                if v:
-                    try:
-                        result["total_sqft"] = float(v)
-                    except (ValueError, TypeError):
-                        pass
-                    break
+        # ── Roof ──────────────────────────────────────────────────────
+        roof_val = desc.get("roof") or prop.get("roof")
+        if roof_val and isinstance(roof_val, str):
+            result["roof_material"] = roof_val.strip().lower().replace(" ", "_")
+        elif roof_val and isinstance(roof_val, dict):
+            if roof_val.get("material"):
+                result["roof_material"] = str(roof_val["material"]).strip().lower().replace(" ", "_")
+            if roof_val.get("type"):
+                result["roof_type"] = str(roof_val["type"]).strip().lower().replace(" ", "_")
 
-        if not result.get("bedrooms"):
-            for alt in ("bedrooms", "beds_count", "bedroom_count"):
-                v = prop.get(alt)
-                if v:
-                    try:
-                        result["bedrooms"] = int(v)
-                    except (ValueError, TypeError):
-                        pass
-                    break
+        # ── Foundation / Basement ─────────────────────────────────────
+        basement_val = desc.get("basement") or prop.get("basement")
+        if basement_val and isinstance(basement_val, str) and basement_val.lower() not in ("none", "no"):
+            result["basement"] = basement_val.strip().lower()
+        foundation_val = desc.get("foundation") or prop.get("foundation")
+        if foundation_val:
+            result["foundation_type"] = str(foundation_val).strip().lower()
 
-        if not result.get("bathrooms"):
-            for alt in ("bathrooms", "baths_full", "bath_count"):
-                v = prop.get(alt)
-                if v:
-                    try:
-                        result["bathrooms"] = float(v)
-                    except (ValueError, TypeError):
-                        pass
-                    break
+        # ── Sale history ──────────────────────────────────────────────
+        # Check property_history for most recent sale
+        history = prop.get("property_history", []) or []
+        for event in history:
+            if not isinstance(event, dict):
+                continue
+            event_name = (event.get("event_name") or "").lower()
+            if "sold" in event_name or "closed" in event_name:
+                date_val = event.get("date")
+                price_val = event.get("price")
+                if date_val:
+                    result["last_sale_date"] = str(date_val)
+                if price_val:
+                    result["last_sale_price"] = _safe_float(price_val)
+                break  # most recent sale found
 
-        # Sale history
-        sale_history = prop.get("last_sold") or prop.get("sale_history") or {}
-        if isinstance(sale_history, list) and sale_history:
-            sale_history = sale_history[0]
-        if isinstance(sale_history, dict):
-            result["last_sale_date"] = str(sale_history.get("date", ""))
-            price = sale_history.get("price", 0)
-            if price:
-                try:
-                    result["last_sale_price"] = float(price)
-                except (ValueError, TypeError):
-                    pass
-
-        # Also check top-level last_sold_price / last_sold_date
+        # Fallback: check top-level sold fields
         if not result.get("last_sale_price"):
-            for pkey in ("last_sold_price", "sold_price", "price"):
+            for pkey in ("last_sold_price", "sold_price", "list_price"):
                 v = prop.get(pkey)
                 if v:
-                    try:
-                        result["last_sale_price"] = float(v)
-                    except (ValueError, TypeError):
-                        pass
-                    break
+                    result["last_sale_price"] = _safe_float(v)
+                    if result["last_sale_price"]:
+                        break
         if not result.get("last_sale_date"):
-            for dkey in ("last_sold_date", "sold_date"):
+            for dkey in ("last_sold_date", "sold_date", "last_update_date"):
                 v = prop.get(dkey)
                 if v:
                     result["last_sale_date"] = str(v)
                     break
+
+        # ── Assessed value ────────────────────────────────────────────
+        tax_record = prop.get("tax_history", [])
+        if isinstance(tax_record, list) and tax_record:
+            latest_tax = tax_record[0]
+            if isinstance(latest_tax, dict):
+                assessed = latest_tax.get("assessment", {}) or {}
+                total_val = assessed.get("total") or assessed.get("building")
+                if total_val:
+                    result["total_value"] = _safe_float(total_val)
+                land_val = assessed.get("land")
+                if land_val:
+                    result["land_value"] = _safe_float(land_val)
+                improvement_val = assessed.get("building")
+                if improvement_val:
+                    result["improvement_value"] = _safe_float(improvement_val)
+
+        # Remove None/0 values
+        result = {k: v for k, v in result.items() if v}
 
         return result
 
     except Exception as e:
         print(f"    ✗ RapidAPI lookup failed: {e}")
         return {}
+
+
+def _safe_int(val) -> int:
+    """Convert to int, return 0 on failure."""
+    if val is None:
+        return 0
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _safe_float(val) -> float:
+    """Convert to float, return 0.0 on failure."""
+    if val is None:
+        return 0.0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def lookup_attom_property(address: str, api_key: str) -> dict:
@@ -866,7 +907,8 @@ def lookup_property(address: str) -> PropertyData:
             for field_name in [
                 "year_built", "total_sqft", "stories", "bedrooms", "bathrooms",
                 "lot_sqft", "basement", "garage", "foundation_type",
-                "roof_type", "roof_material",
+                "roof_type", "roof_material", "total_value", "land_value",
+                "improvement_value",
             ]:
                 val = rapid_data.get(field_name)
                 if val and not getattr(prop, field_name, None):
