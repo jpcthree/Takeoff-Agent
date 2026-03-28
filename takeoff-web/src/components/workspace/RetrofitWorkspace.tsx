@@ -119,7 +119,12 @@ function RetrofitWorkspace() {
       <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50">
         <AlertCircle className="h-12 w-12 text-red-400 mb-4" />
         <h3 className="text-lg font-semibold text-gray-800 mb-2">Estimate Failed</h3>
-        <p className="text-sm text-red-600 mb-6 max-w-md">{error}</p>
+        <p className="text-sm text-red-600 mb-2 max-w-md">{error}</p>
+        {projectMeta.address && (
+          <p className="text-xs text-gray-500 mb-6 max-w-md">
+            Address: &ldquo;{projectMeta.address}&rdquo; — Make sure to include the full street address, city, and state (e.g. &ldquo;123 Main St, Denver, CO 80204&rdquo;).
+          </p>
+        )}
         {projectMeta.address && (
           <button
             onClick={() => runEstimate(projectMeta.address)}

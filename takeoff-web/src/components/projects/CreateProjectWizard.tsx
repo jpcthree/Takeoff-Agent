@@ -174,19 +174,24 @@ function CreateProjectWizard({ mode = 'generic', onComplete }: CreateProjectWiza
 
             {/* In retrofit mode, address comes first and is required */}
             {mode === 'retrofit' && (
-              <AddressAutocomplete
-                label="Property Address"
-                placeholder="Start typing an address..."
-                value={formData.address}
-                onChange={(val) => updateField('address', val)}
-                onSelect={(addr) => {
-                  updateField('address', addr);
-                  // Auto-fill project name from address if empty
-                  if (!formData.name.trim()) {
-                    updateField('name', addr.split(',')[0] || addr);
-                  }
-                }}
-              />
+              <>
+                <AddressAutocomplete
+                  label="Property Address"
+                  placeholder="e.g. 1927 N Meade St, Denver, CO 80204"
+                  value={formData.address}
+                  onChange={(val) => updateField('address', val)}
+                  onSelect={(addr) => {
+                    updateField('address', addr);
+                    // Auto-fill project name from address if empty
+                    if (!formData.name.trim()) {
+                      updateField('name', addr.split(',')[0] || addr);
+                    }
+                  }}
+                />
+                <p className="text-xs text-gray-500 -mt-3">
+                  Include the full address with city and state for best results.
+                </p>
+              </>
             )}
 
             <Input
