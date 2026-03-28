@@ -7,11 +7,12 @@ geometry, and returns a unified PropertyData object.
 
 Data source priority:
   1. Google Geocoding API (address → lat/lng)  — requires API key
-     Fallback: US Census Geocoder (free, no key)
+     Fallback: US Census Geocoder → Nominatim (free, no key)
   2. Google Solar API (roof segments, footprint) — requires API key
   3. OpenStreetMap Overpass API (building footprint) — free, no key
   4. Colorado Geospatial Portal (assessor data)   — free, CO only
-     Future: ATTOM Data API (national, $95/mo)
+  5. ATTOM Data API (national, 158M+ properties) — requires API key
+     Fallback: RapidAPI Realty in US (recently listed/sold only)
 """
 from __future__ import annotations
 
@@ -587,8 +588,182 @@ def _query_co_statewide_parcels(lat: float, lng: float) -> dict:
         return {}
 
 
-# ── ATTOM Stub (future) ────────────────────────────────────────────────────
-# ── 5. RapidAPI Property Lookup (National Fallback) ────────────────────────
+# ── 5. ATTOM Property Data API (National) ──────────────────────────────────
+def _lookup_attom_property(address: str, attom_api_key: str) -> dict:
+    """
+    Query ATTOM Data expanded profile for comprehensive property data.
+    Covers 158M+ US properties: structure, tax, sale, assessment.
+    """
+    if not attom_api_key:
+        return {}
+
+    import re
+
+    _HEADERS = {"apikey": attom_api_key, "Accept": "application/json"}
+    _BASE = "https://api.gateway.attomdata.com"
+
+    try:
+        # Parse address into line1 + line2 (city, state zip)
+        # "1685 Brighton Cir, Castle Rock, CO 80104" → ("1685 Brighton Cir", "Castle Rock, CO 80104")
+        parts = address.split(",", 1)
+        if len(parts) < 2:
+            print(f"    ✗ ATTOM: cannot parse address: {address}")
+            return {}
+        address1 = parts[0].strip()
+        address2 = ",".join(parts[1:]).strip()
+
+        print(f"    → Querying ATTOM: {address1} | {address2}")
+        resp = requests.get(
+            f"{_BASE}/propertyapi/v1.0.0/property/expandedprofile",
+            params={"address1": address1, "address2": address2},
+            headers=_HEADERS,
+            timeout=_TIMEOUT,
+        )
+
+        if resp.status_code != 200:
+            print(f"    ✗ ATTOM HTTP {resp.status_code}")
+            return {}
+
+        data = resp.json()
+        total = data.get("status", {}).get("total", 0)
+        if not total:
+            print(f"    ✗ ATTOM: no results for address")
+            return {}
+
+        prop = data["property"][0]
+        result = {}
+
+        # ── Summary ──────────────────────────────────────────────
+        summary = prop.get("summary", {})
+        result["year_built"] = _safe_int(summary.get("yearBuilt"))
+
+        # ── Building ─────────────────────────────────────────────
+        bldg = prop.get("building", {})
+        size = bldg.get("size", {})
+        rooms = bldg.get("rooms", {})
+        interior = bldg.get("interior", {})
+        construction = bldg.get("construction", {})
+        bldg_summary = bldg.get("summary", {})
+
+        result["total_sqft"] = _safe_float(size.get("livingSize") or size.get("universalSize"))
+        result["bedrooms"] = _safe_int(rooms.get("beds"))
+        result["bathrooms"] = _safe_float(rooms.get("bathsTotal") or rooms.get("bathsFull"))
+        result["stories"] = _safe_int(bldg_summary.get("levels"))
+
+        # Basement
+        bsmt_type = (interior.get("bsmtType") or "").strip().lower()
+        if bsmt_type and bsmt_type not in ("none", "no basement"):
+            result["basement"] = bsmt_type
+        result["basement_sqft"] = _safe_float(interior.get("bsmtSize"))
+
+        # Construction / Roof
+        roof_cover = (construction.get("roofCover") or "").strip().lower()
+        roof_shape = (construction.get("roofShape") or "").strip().lower()
+        if roof_cover:
+            # Normalize to our standard values
+            if "composition" in roof_cover or "asphalt" in roof_cover or "shingle" in roof_cover:
+                result["roof_material"] = "asphalt_shingle"
+            elif "metal" in roof_cover:
+                result["roof_material"] = "metal"
+            elif "tile" in roof_cover or "clay" in roof_cover:
+                result["roof_material"] = "tile"
+            elif "slate" in roof_cover:
+                result["roof_material"] = "slate"
+            elif "wood" in roof_cover or "shake" in roof_cover:
+                result["roof_material"] = "wood_shake"
+            else:
+                result["roof_material"] = roof_cover.replace(" ", "_")
+        if roof_shape:
+            if "gable" in roof_shape:
+                result["roof_type"] = "gable"
+            elif "hip" in roof_shape:
+                result["roof_type"] = "hip"
+            elif "flat" in roof_shape:
+                result["roof_type"] = "flat"
+            else:
+                result["roof_type"] = roof_shape.replace(" ", "_")
+
+        # Foundation — derive from basement type
+        if bsmt_type and "unfinished" in bsmt_type or "finished" in bsmt_type or "full" in bsmt_type:
+            result["foundation_type"] = "full_basement"
+        elif "crawl" in bsmt_type:
+            result["foundation_type"] = "crawlspace"
+        elif "slab" in bsmt_type:
+            result["foundation_type"] = "slab"
+
+        wall_type = (construction.get("wallType") or "").strip().lower()
+        if wall_type:
+            if "brick" in wall_type:
+                result["exterior_wall_material"] = "brick"
+            elif "stucco" in wall_type:
+                result["exterior_wall_material"] = "stucco"
+            elif "vinyl" in wall_type or "aluminum" in wall_type:
+                result["exterior_wall_material"] = "vinyl"
+            elif "wood" in wall_type or "frame" in wall_type:
+                result["exterior_wall_material"] = "frame"
+
+        frame_type = (construction.get("frameType") or "").strip().lower()
+        if frame_type:
+            result["construction_type"] = frame_type
+
+        # ── Utilities ────────────────────────────────────────────
+        utilities = prop.get("utilities", {})
+        heating = (utilities.get("heatingType") or "").strip().lower()
+        cooling = (utilities.get("coolingType") or "").strip().lower()
+        if heating:
+            result["heating_type"] = "forced_air" if "central" in heating or "forced" in heating else heating
+        if cooling:
+            result["cooling_type"] = "central_air" if "central" in cooling else cooling
+
+        # ── Lot ──────────────────────────────────────────────────
+        lot = prop.get("lot", {})
+        result["lot_sqft"] = _safe_float(lot.get("lotSize2"))
+
+        # ── Parking ──────────────────────────────────────────────
+        parking = bldg.get("parking", {})
+        if parking.get("prkgSize"):
+            result["garage"] = "attached"  # ATTOM doesn't always distinguish
+
+        # ── Sale history ─────────────────────────────────────────
+        sale = prop.get("sale", {})
+        if sale:
+            amount = sale.get("amount", {})
+            sale_date = sale.get("saleTransDate") or amount.get("saleRecDate")
+            sale_amt = _safe_float(amount.get("saleAmt"))
+            if sale_date:
+                result["last_sale_date"] = str(sale_date)
+            if sale_amt:
+                result["last_sale_price"] = sale_amt
+
+        # ── Assessment / Market Value ────────────────────────────
+        assessment = prop.get("assessment", {})
+        assessed = assessment.get("assessed", {})
+        market = assessment.get("market", {})
+
+        result["total_value"] = _safe_float(assessed.get("assdTtlValue"))
+        result["land_value"] = _safe_float(assessed.get("assdLandValue"))
+        result["improvement_value"] = _safe_float(assessed.get("assdImprValue"))
+
+        # Market value = estimated market value (what we want for "Est. Market Value")
+        mkt_total = _safe_float(market.get("mktTtlValue"))
+        if mkt_total:
+            result["estimated_value"] = mkt_total
+
+        # Remove None/0 values
+        result = {k: v for k, v in result.items() if v}
+
+        print(f"    ✓ ATTOM: {result.get('bedrooms', 0)}bd/{result.get('bathrooms', 0)}ba, "
+              f"{result.get('total_sqft', 0)} sqft, built {result.get('year_built', '?')}, "
+              f"roof={result.get('roof_material', '?')}/{result.get('roof_type', '?')}")
+
+        return result
+
+    except Exception as e:
+        print(f"    ✗ ATTOM lookup failed: {e}")
+        return {}
+
+
+# ── 6. RapidAPI Property Lookup (Legacy Fallback) ─────────────────────────
 def _parse_rapidapi_details(details_list: list) -> dict:
     """Parse the 'details' array from RapidAPI property detail for structured data."""
     parsed = {}
@@ -1026,31 +1201,57 @@ def lookup_property(address: str) -> PropertyData:
         prop.warnings.append("Colorado GIS data not available — using era-based heuristics for all property details.")
         print("    ✗ No CO GIS data found")
 
-    # ── Step 4b: RapidAPI National Fallback ─────────────────────────────
-    # If CO GIS returned mostly empty data, try RapidAPI for national coverage
+    # ── Step 4b: ATTOM Property Data (National) ────────────────────────
+    # ATTOM covers 158M+ US properties — use as primary national source
+    _all_fields = [
+        "year_built", "total_sqft", "stories", "bedrooms", "bathrooms",
+        "lot_sqft", "basement", "basement_sqft", "garage", "foundation_type",
+        "roof_type", "roof_material", "exterior_wall_material", "construction_type",
+        "heating_type", "cooling_type", "total_value", "land_value",
+        "improvement_value", "estimated_value",
+    ]
+
+    if keys.get("attom_api_key"):
+        print("  Querying ATTOM Property API (national)...")
+        attom_data = _lookup_attom_property(address, keys["attom_api_key"])
+        if attom_data:
+            for field_name in _all_fields:
+                val = attom_data.get(field_name)
+                if val and not getattr(prop, field_name, None):
+                    setattr(prop, field_name, val)
+                    prop.sources[field_name] = "attom"
+            # Sale history — ATTOM always wins (most authoritative)
+            if attom_data.get("last_sale_date"):
+                prop.last_sale_date = attom_data["last_sale_date"]
+                prop.sources["last_sale"] = "attom"
+            if attom_data.get("last_sale_price"):
+                prop.last_sale_price = attom_data["last_sale_price"]
+            if attom_data.get("estimated_value"):
+                prop.estimated_value = attom_data["estimated_value"]
+                prop.sources["estimated_value"] = "attom"
+            found = [k for k in attom_data if attom_data[k]]
+            print(f"    → Found: {', '.join(found)}")
+        else:
+            print("    ✗ No ATTOM data found")
+
+    # ── Step 4c: RapidAPI Fallback (if ATTOM missed) ─────────────────
     _core_fields = [prop.year_built, prop.total_sqft, prop.bedrooms, prop.bathrooms]
     _has_property_data = sum(1 for v in _core_fields if v) >= 2
     if not _has_property_data and keys.get("rapidapi_key"):
-        print("  Querying RapidAPI for property details (national fallback)...")
+        print("  Querying RapidAPI for property details (fallback)...")
         rapid_data = _lookup_rapidapi_property(
             address, prop.lat, prop.lng, keys["rapidapi_key"]
         )
         if rapid_data:
-            for field_name in [
-                "year_built", "total_sqft", "stories", "bedrooms", "bathrooms",
-                "lot_sqft", "basement", "garage", "foundation_type",
-                "roof_type", "roof_material", "total_value", "land_value",
-                "improvement_value",
-            ]:
+            for field_name in _all_fields:
                 val = rapid_data.get(field_name)
                 if val and not getattr(prop, field_name, None):
                     setattr(prop, field_name, val)
                     prop.sources[field_name] = "rapidapi"
-            # Sale history (always from RapidAPI if available)
-            if rapid_data.get("last_sale_date"):
+            if rapid_data.get("last_sale_date") and not prop.last_sale_date:
                 prop.last_sale_date = rapid_data["last_sale_date"]
                 prop.sources["last_sale"] = "rapidapi"
-            if rapid_data.get("last_sale_price"):
+            if rapid_data.get("last_sale_price") and not prop.last_sale_price:
                 prop.last_sale_price = rapid_data["last_sale_price"]
             found = [k for k in rapid_data if rapid_data[k]]
             print(f"    → Found: {', '.join(found)}")
@@ -1058,20 +1259,6 @@ def lookup_property(address: str) -> PropertyData:
             print("    ✗ No RapidAPI data found")
     elif not _has_property_data:
         prop.warnings.append("No property data API available — using era-based heuristics.")
-
-    # Also try RapidAPI just for sale history even if CO GIS had property data
-    if not prop.last_sale_date and keys.get("rapidapi_key") and _has_property_data:
-        print("  Querying RapidAPI for sale history...")
-        rapid_data = _lookup_rapidapi_property(
-            address, prop.lat, prop.lng, keys["rapidapi_key"]
-        )
-        if rapid_data.get("last_sale_date"):
-            prop.last_sale_date = rapid_data["last_sale_date"]
-            prop.last_sale_price = rapid_data.get("last_sale_price", 0)
-            prop.sources["last_sale"] = "rapidapi"
-            print(f"    → Last sale: {prop.last_sale_date} for ${prop.last_sale_price:,.0f}")
-        else:
-            print("    ✗ No sale history found")
 
     # ── Summary ─────────────────────────────────────────────────────────
     print("\n  Property Data Summary:")
