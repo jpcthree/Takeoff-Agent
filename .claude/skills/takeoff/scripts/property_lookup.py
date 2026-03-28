@@ -74,6 +74,7 @@ class PropertyData:
     total_value: float = 0.0       # Total assessed property value
     land_value: float = 0.0        # Appraised land value
     improvement_value: float = 0.0 # Appraised improvement value
+    estimated_value: float = 0.0   # Estimated market value (like Zestimate)
 
     # Sale history
     last_sale_date: str = ""       # "YYYY-MM-DD"
@@ -588,12 +589,75 @@ def _query_co_statewide_parcels(lat: float, lng: float) -> dict:
 
 # ── ATTOM Stub (future) ────────────────────────────────────────────────────
 # ── 5. RapidAPI Property Lookup (National Fallback) ────────────────────────
+def _parse_rapidapi_details(details_list: list) -> dict:
+    """Parse the 'details' array from RapidAPI property detail for structured data."""
+    parsed = {}
+    if not details_list:
+        return parsed
+    for section in details_list:
+        if not isinstance(section, dict):
+            continue
+        category = (section.get("category") or "").lower()
+        texts = section.get("text", []) or []
+
+        for line in texts:
+            line_lower = line.lower() if isinstance(line, str) else ""
+
+            # Roof info
+            if "roof" in category or line_lower.startswith("roof"):
+                if "composition" in line_lower or "asphalt" in line_lower or "shingle" in line_lower:
+                    parsed["roof_material"] = "asphalt_shingle"
+                elif "metal" in line_lower:
+                    parsed["roof_material"] = "metal"
+                elif "tile" in line_lower or "clay" in line_lower:
+                    parsed["roof_material"] = "tile"
+                elif "slate" in line_lower:
+                    parsed["roof_material"] = "slate"
+                elif "wood" in line_lower or "shake" in line_lower:
+                    parsed["roof_material"] = "wood_shake"
+
+            # Foundation / Basement
+            if "foundation" in line_lower:
+                if "slab" in line_lower:
+                    parsed["foundation_type"] = "slab"
+                elif "crawl" in line_lower:
+                    parsed["foundation_type"] = "crawlspace"
+                elif "basement" in line_lower or "poured" in line_lower or "concrete" in line_lower:
+                    parsed["foundation_type"] = "full_basement"
+                elif "pier" in line_lower or "post" in line_lower:
+                    parsed["foundation_type"] = "pier_and_beam"
+
+            if "basement" in category:
+                if "finished" in line_lower or "full" in line_lower:
+                    parsed["basement"] = "full"
+                elif "partial" in line_lower:
+                    parsed["basement"] = "partial"
+                elif "crawl" in line_lower:
+                    parsed["basement"] = "crawlspace"
+                elif "unfinished" in line_lower:
+                    parsed["basement"] = "unfinished"
+
+            # Heating / Cooling
+            if "heating" in line_lower and "feature" in line_lower:
+                if "forced air" in line_lower:
+                    parsed["heating_type"] = "forced_air"
+                elif "radiant" in line_lower:
+                    parsed["heating_type"] = "radiant"
+                elif "baseboard" in line_lower:
+                    parsed["heating_type"] = "baseboard"
+            if "cooling" in line_lower and "feature" in line_lower:
+                if "central" in line_lower:
+                    parsed["cooling_type"] = "central_air"
+
+    return parsed
+
+
 def _lookup_rapidapi_property(
     address: str, lat: float, lng: float, rapidapi_key: str
 ) -> dict:
     """
     Query RapidAPI 'Realty in US' (apidojo) for property details + sale history.
-    Two-step: auto-complete address → get property detail.
+    Two-step: bounding-box list search → match by street number → get detail.
     Returns dict with standard property fields.
     """
     if not rapidapi_key:
@@ -602,95 +666,146 @@ def _lookup_rapidapi_property(
     _HEADERS = {
         "X-RapidAPI-Key": rapidapi_key,
         "X-RapidAPI-Host": "realty-in-us.p.rapidapi.com",
+        "Content-Type": "application/json",
     }
 
     try:
-        # Step 1: Search for property by address to get property_id
+        # Extract street number from address for matching
+        import re
+        street_num_match = re.match(r"(\d+)", address.strip())
+        street_num = street_num_match.group(1) if street_num_match else ""
+        # Extract street name (second word, often the street name)
+        addr_parts = address.strip().split()
+        street_name = addr_parts[1].lower() if len(addr_parts) > 1 else ""
+
+        # Step 1: Search for property — try bounding box, then postal code
         print(f"    → Searching Realty-in-US for: {address}")
-        search_resp = requests.get(
-            "https://realty-in-us.p.rapidapi.com/locations/v2/auto-complete",
-            params={"input": address, "limit": "1"},
-            headers=_HEADERS,
-            timeout=_TIMEOUT,
-        )
-        if search_resp.status_code != 200:
-            print(f"    ✗ Address search failed: HTTP {search_resp.status_code}")
+        property_id = None
+
+        # Extract postal code from address
+        postal_match = re.search(r"\b(\d{5})\b", address)
+        postal_code = postal_match.group(1) if postal_match else ""
+
+        def _match_results(results_list):
+            """Match property by street number + name."""
+            for r in results_list:
+                r_addr = r.get("location", {}).get("address", {})
+                r_line = (r_addr.get("line") or "").lower()
+                r_num = (r_addr.get("street_number") or "")
+                r_name = (r_addr.get("street_name") or "").lower()
+                if street_num and (r_num == street_num or r_line.startswith(street_num)):
+                    if street_name and (street_name in r_name or street_name in r_line):
+                        return r.get("property_id"), r_addr.get("line", "?")
+            return None, None
+
+        # Strategy A: Bounding box search (expanding: 300m → 1km)
+        for delta in [0.003, 0.01]:
+            if property_id:
+                break
+            boundary = {
+                "type": "Polygon",
+                "coordinates": [[
+                    [lng - delta, lat - delta],
+                    [lng + delta, lat - delta],
+                    [lng + delta, lat + delta],
+                    [lng - delta, lat + delta],
+                    [lng - delta, lat - delta],
+                ]]
+            }
+            for status_list in [["sold"], ["for_sale"]]:
+                search_resp = requests.post(
+                    "https://realty-in-us.p.rapidapi.com/properties/v3/list",
+                    json={"limit": 50, "offset": 0, "status": status_list,
+                          "boundary": boundary},
+                    headers=_HEADERS,
+                    timeout=_TIMEOUT,
+                )
+                if search_resp.status_code != 200:
+                    continue
+                results = (search_resp.json()
+                           .get("data", {}).get("home_search", {}).get("results", []))
+                property_id, matched_line = _match_results(results)
+                if property_id:
+                    print(f"    → Matched (bbox): {matched_line} (ID: {property_id})")
+                    break
+
+        # Strategy B: Postal code search with pagination (if bbox failed)
+        if not property_id and postal_code:
+            print(f"    → Trying postal code search: {postal_code}")
+            for offset in range(0, 600, 200):
+                search_resp = requests.post(
+                    "https://realty-in-us.p.rapidapi.com/properties/v3/list",
+                    json={"limit": 200, "offset": offset, "status": ["sold"],
+                          "postal_code": postal_code,
+                          "sort": {"direction": "desc", "field": "sold_date"}},
+                    headers=_HEADERS,
+                    timeout=_TIMEOUT,
+                )
+                if search_resp.status_code != 200:
+                    break
+                results = (search_resp.json()
+                           .get("data", {}).get("home_search", {}).get("results", []))
+                if not results:
+                    break
+                property_id, matched_line = _match_results(results)
+                if property_id:
+                    print(f"    → Matched (zip): {matched_line} (ID: {property_id})")
+                    break
+
+        if not property_id:
+            print(f"    ✗ No property match found in bounding box")
             return {}
 
-        search_data = search_resp.json()
-        autocomplete = search_data.get("autocomplete", [])
-        if not autocomplete:
-            print("    ✗ No address matches found")
-            return {}
-
-        # Extract property_id from first match
-        first_match = autocomplete[0]
-        mpr_id = first_match.get("mpr_id", "")
-        if not mpr_id:
-            print(f"    ✗ No mpr_id in match: {first_match.get('full_address', ['?'])}")
-            return {}
-
-        print(f"    → Found property ID: {mpr_id}")
-
-        # Step 2: Get property detail
+        # Step 2: Get full property detail
         detail_resp = requests.get(
             "https://realty-in-us.p.rapidapi.com/properties/v3/detail",
-            params={"property_id": mpr_id},
-            headers=_HEADERS,
+            params={"property_id": property_id},
+            headers={k: v for k, v in _HEADERS.items() if k != "Content-Type"},
             timeout=_TIMEOUT,
         )
         if detail_resp.status_code != 200:
             print(f"    ✗ Property detail failed: HTTP {detail_resp.status_code}")
             return {}
 
-        detail_data = detail_resp.json()
-
-        # Navigate to property data — typically under data.home
-        prop = detail_data
-        if isinstance(prop, dict):
-            for key in ("data", "home", "property"):
-                if key in prop and isinstance(prop[key], dict):
-                    prop = prop[key]
-            # data.home is the common nesting
-            if "home" in prop and isinstance(prop["home"], dict):
-                prop = prop["home"]
+        prop = detail_resp.json().get("data", {}).get("home", {}) or {}
 
         result = {}
 
         # ── Basic fields ──────────────────────────────────────────────
         desc = prop.get("description", {}) or {}
-        result["year_built"] = _safe_int(desc.get("year_built") or prop.get("year_built"))
-        result["total_sqft"] = _safe_float(desc.get("sqft") or desc.get("lot_sqft") or prop.get("sqft"))
-        result["bedrooms"] = _safe_int(desc.get("beds") or prop.get("beds"))
-        result["bathrooms"] = _safe_float(desc.get("baths") or prop.get("baths"))
-        result["stories"] = _safe_int(desc.get("stories") or prop.get("stories"))
-        result["lot_sqft"] = _safe_float(desc.get("lot_sqft") or prop.get("lot_sqft"))
+        result["year_built"] = _safe_int(desc.get("year_built"))
+        result["total_sqft"] = _safe_float(desc.get("sqft"))
+        result["bedrooms"] = _safe_int(desc.get("beds"))
+        result["bathrooms"] = _safe_float(desc.get("baths"))
+        result["stories"] = _safe_int(desc.get("stories"))
+        result["lot_sqft"] = _safe_float(desc.get("lot_sqft"))
 
         # Garage
-        garage_val = desc.get("garage") or prop.get("garage")
+        garage_val = desc.get("garage")
         if garage_val:
             result["garage"] = str(garage_val)
 
-        # ── Roof ──────────────────────────────────────────────────────
-        roof_val = desc.get("roof") or prop.get("roof")
-        if roof_val and isinstance(roof_val, str):
-            result["roof_material"] = roof_val.strip().lower().replace(" ", "_")
-        elif roof_val and isinstance(roof_val, dict):
-            if roof_val.get("material"):
-                result["roof_material"] = str(roof_val["material"]).strip().lower().replace(" ", "_")
-            if roof_val.get("type"):
-                result["roof_type"] = str(roof_val["type"]).strip().lower().replace(" ", "_")
+        # ── Parse rich details array ─────────────────────────────────
+        details_parsed = _parse_rapidapi_details(prop.get("details", []))
+        result.update(details_parsed)
 
-        # ── Foundation / Basement ─────────────────────────────────────
-        basement_val = desc.get("basement") or prop.get("basement")
-        if basement_val and isinstance(basement_val, str) and basement_val.lower() not in ("none", "no"):
-            result["basement"] = basement_val.strip().lower()
-        foundation_val = desc.get("foundation") or prop.get("foundation")
-        if foundation_val:
-            result["foundation_type"] = str(foundation_val).strip().lower()
+        # ── Roof (fallback from description if details didn't have it) ──
+        if "roof_material" not in result:
+            roof_val = desc.get("roof")
+            if roof_val and isinstance(roof_val, str):
+                result["roof_material"] = roof_val.strip().lower().replace(" ", "_")
+
+        # ── Foundation / Basement (fallback from description) ────────
+        if "basement" not in result:
+            basement_val = desc.get("basement")
+            if basement_val and isinstance(basement_val, str) and basement_val.lower() not in ("none", "no"):
+                result["basement"] = basement_val.strip().lower()
+        if "foundation_type" not in result:
+            foundation_val = desc.get("foundation")
+            if foundation_val:
+                result["foundation_type"] = str(foundation_val).strip().lower()
 
         # ── Sale history ──────────────────────────────────────────────
-        # Check property_history for most recent sale
         history = prop.get("property_history", []) or []
         for event in history:
             if not isinstance(event, dict):
@@ -703,18 +818,18 @@ def _lookup_rapidapi_property(
                     result["last_sale_date"] = str(date_val)
                 if price_val:
                     result["last_sale_price"] = _safe_float(price_val)
-                break  # most recent sale found
+                break
 
         # Fallback: check top-level sold fields
         if not result.get("last_sale_price"):
-            for pkey in ("last_sold_price", "sold_price", "list_price"):
+            for pkey in ("last_sold_price", "sold_price"):
                 v = prop.get(pkey)
                 if v:
                     result["last_sale_price"] = _safe_float(v)
                     if result["last_sale_price"]:
                         break
         if not result.get("last_sale_date"):
-            for dkey in ("last_sold_date", "sold_date", "last_update_date"):
+            for dkey in ("last_sold_date", "sold_date"):
                 v = prop.get(dkey)
                 if v:
                     result["last_sale_date"] = str(v)
@@ -735,6 +850,23 @@ def _lookup_rapidapi_property(
                 improvement_val = assessed.get("building")
                 if improvement_val:
                     result["improvement_value"] = _safe_float(improvement_val)
+
+        # ── Estimated market value ───────────────────────────────────
+        estimate_obj = prop.get("estimate", {}) or {}
+        if isinstance(estimate_obj, dict):
+            est_val = estimate_obj.get("estimate") or estimate_obj.get("value")
+            if est_val:
+                result["estimated_value"] = _safe_float(est_val)
+        elif isinstance(estimate_obj, (int, float)):
+            result["estimated_value"] = _safe_float(estimate_obj)
+        # Fallback: check list_price for currently listed properties
+        if not result.get("estimated_value"):
+            list_price = prop.get("list_price")
+            if list_price:
+                result["estimated_value"] = _safe_float(list_price)
+
+        print(f"    ✓ RapidAPI: {result.get('bedrooms',0)}bd/{result.get('bathrooms',0)}ba, "
+              f"{result.get('total_sqft',0)} sqft, built {result.get('year_built','?')}")
 
         # Remove None/0 values
         result = {k: v for k, v in result.items() if v}

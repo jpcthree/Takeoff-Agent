@@ -52,6 +52,7 @@ export interface PropertyInfo {
   total_value: number;
   land_value: number;
   improvement_value: number;
+  estimated_value: number;
   sources: Record<string, string>;
   warnings: string[];
 }

@@ -12,7 +12,6 @@ import {
   DollarSign,
   Building,
   Landmark,
-  ShieldCheck,
 } from 'lucide-react';
 import type { PropertyInfo } from '@/lib/api/python-service';
 
@@ -78,10 +77,11 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
   const hasRoofMaterial = propertyData.roof_material && propertyData.roof_material !== 'unknown';
   const hasSaleDate = propertyData.last_sale_date && propertyData.last_sale_date !== '';
   const hasSalePrice = propertyData.last_sale_price > 0;
-  const hasValue = propertyData.total_value > 0;
+  const hasEstimatedValue = propertyData.estimated_value > 0;
+  const hasAssessedValue = propertyData.total_value > 0;
 
   // Check if we have any details to show
-  const hasDetails = hasBasement || hasFoundation || hasRoofType || hasRoofMaterial || hasSaleDate || hasValue;
+  const hasDetails = hasBasement || hasFoundation || hasRoofType || hasRoofMaterial || hasSaleDate || hasEstimatedValue || hasAssessedValue;
 
   return (
     <div className="bg-white">
@@ -174,24 +174,20 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
                 ].filter(Boolean).join(' — ')}
               />
             )}
-            {hasValue && (
-              <DetailRow icon={Landmark} label="Assessed Value" value={formatCurrency(propertyData.total_value)} />
+            {hasEstimatedValue && (
+              <DetailRow icon={DollarSign} label="Est. Market Value" value={formatCurrency(propertyData.estimated_value)} />
+            )}
+            {!hasEstimatedValue && hasAssessedValue && (
+              <DetailRow icon={DollarSign} label="Est. Market Value" value={formatCurrency(propertyData.total_value)} />
             )}
             {(hasSaleDate || hasSalePrice) && (
               <DetailRow
-                icon={DollarSign}
+                icon={Landmark}
                 label="Last Sale"
                 value={[
                   hasSalePrice ? formatCurrency(propertyData.last_sale_price) : null,
                   hasSaleDate ? propertyData.last_sale_date : null,
                 ].filter(Boolean).join(' on ')}
-              />
-            )}
-            {propertyData.sources && Object.keys(propertyData.sources).length > 0 && (
-              <DetailRow
-                icon={ShieldCheck}
-                label="Data Sources"
-                value={[...new Set(Object.values(propertyData.sources))].join(', ')}
               />
             )}
           </div>

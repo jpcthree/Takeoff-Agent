@@ -200,10 +200,9 @@ async def estimate_from_address(req: EstimateRequest):
         "total_value": prop.total_value or 0,
         "land_value": prop.land_value or 0,
         "improvement_value": prop.improvement_value or 0,
+        "estimated_value": prop.estimated_value or 0,
         "last_sale_date": prop.last_sale_date or "",
         "last_sale_price": prop.last_sale_price or 0,
-        "sources": prop.sources,
-        "warnings": prop.warnings,
     }
 
     # ── Step 8: Serialize and return ──────────────────────────────────
