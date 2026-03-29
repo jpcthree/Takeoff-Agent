@@ -1397,13 +1397,44 @@ def fetch_property_images(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Street View Static API — 1280x960 (scale=2 for high-DPI clarity)
+    # ── Street View ────────────────────────────────────────────────────
+    # Use the address (not lat/lng) so Google finds the best panorama
+    # facing the property. Add source=outdoor to avoid indoor panos,
+    # and use the metadata endpoint first to get the heading toward the
+    # building from the nearest streetview camera position.
     try:
-        url = (
-            f"https://maps.googleapis.com/maps/api/streetview"
-            f"?size=640x480&scale=2&location={lat},{lng}&key={google_api_key}"
+        import math as _math
+        import urllib.parse as _urlparse
+
+        encoded_addr = _urlparse.quote(address)
+
+        # Step 1: Get Street View metadata to find camera position
+        meta_url = (
+            f"https://maps.googleapis.com/maps/api/streetview/metadata"
+            f"?location={encoded_addr}&source=outdoor&key={google_api_key}"
         )
-        resp = requests.get(url, timeout=_TIMEOUT)
+        meta_resp = requests.get(meta_url, timeout=_TIMEOUT)
+        heading_param = ""
+        if meta_resp.status_code == 200:
+            meta = meta_resp.json()
+            if meta.get("status") == "OK" and meta.get("location"):
+                # Compute heading from camera position TO the property
+                cam_lat = meta["location"]["lat"]
+                cam_lng = meta["location"]["lng"]
+                dlng = _math.radians(lng - cam_lng)
+                y = _math.sin(dlng) * _math.cos(_math.radians(lat))
+                x = (_math.cos(_math.radians(cam_lat)) * _math.sin(_math.radians(lat))
+                     - _math.sin(_math.radians(cam_lat)) * _math.cos(_math.radians(lat)) * _math.cos(dlng))
+                heading = (_math.degrees(_math.atan2(y, x)) + 360) % 360
+                heading_param = f"&heading={heading:.1f}"
+
+        # Step 2: Fetch the image using address + computed heading
+        sv_url = (
+            f"https://maps.googleapis.com/maps/api/streetview"
+            f"?size=640x480&scale=2&location={encoded_addr}"
+            f"&source=outdoor&fov=80{heading_param}&key={google_api_key}"
+        )
+        resp = requests.get(sv_url, timeout=_TIMEOUT)
         if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
             path = os.path.join(output_dir, "street_view.jpg")
             with open(path, "wb") as f:
@@ -1412,12 +1443,16 @@ def fetch_property_images(
     except Exception as e:
         print(f"    ✗ Street View fetch failed: {e}")
 
-    # Maps Static API — satellite aerial view (scale=2 for 1280x1280 hi-res)
+    # ── Satellite with marker pin ────────────────────────────────────
+    # Zoom 19 gives a good property-level view; red marker pin identifies
+    # the exact house.
     try:
         url = (
             f"https://maps.googleapis.com/maps/api/staticmap"
-            f"?center={lat},{lng}&zoom=20&size=640x640&scale=2"
-            f"&maptype=satellite&key={google_api_key}"
+            f"?center={lat},{lng}&zoom=19&size=640x640&scale=2"
+            f"&maptype=satellite"
+            f"&markers=color:red%7C{lat},{lng}"
+            f"&key={google_api_key}"
         )
         resp = requests.get(url, timeout=_TIMEOUT)
         if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
