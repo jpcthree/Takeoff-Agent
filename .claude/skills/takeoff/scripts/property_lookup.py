@@ -123,10 +123,11 @@ def _load_api_keys() -> dict:
 
 
 # ── 1. Geocoding ────────────────────────────────────────────────────────────
-def geocode_address(address: str, google_api_key: str = "") -> tuple[float, float, str]:
+def geocode_address(address: str, google_api_key: str = "") -> tuple[float, float, str, str]:
     """
-    Geocode an address → (lat, lng, source).
+    Geocode an address → (lat, lng, source, formatted_address).
     Tries Google Geocoding first, then US Census, then Nominatim (OSM).
+    The formatted_address is the canonical version from the geocoder.
     """
     # Try Google Geocoding API
     if google_api_key:
@@ -138,8 +139,10 @@ def geocode_address(address: str, google_api_key: str = "") -> tuple[float, floa
             )
             data = resp.json()
             if data.get("status") == "OK" and data.get("results"):
-                loc = data["results"][0]["geometry"]["location"]
-                return loc["lat"], loc["lng"], "google_geocoding"
+                result = data["results"][0]
+                loc = result["geometry"]["location"]
+                fmt_addr = result.get("formatted_address", address)
+                return loc["lat"], loc["lng"], "google_geocoding", fmt_addr
         except Exception as e:
             pass  # Fall through to Census
 
@@ -158,7 +161,8 @@ def geocode_address(address: str, google_api_key: str = "") -> tuple[float, floa
         matches = data.get("result", {}).get("addressMatches", [])
         if matches:
             coords = matches[0]["coordinates"]
-            return coords["y"], coords["x"], "us_census"
+            matched_addr = matches[0].get("matchedAddress", address)
+            return coords["y"], coords["x"], "us_census", matched_addr
     except Exception:
         pass
 
@@ -177,7 +181,8 @@ def geocode_address(address: str, google_api_key: str = "") -> tuple[float, floa
         )
         data = resp.json()
         if data and len(data) > 0:
-            return float(data[0]["lat"]), float(data[0]["lon"]), "nominatim"
+            display = data[0].get("display_name", address)
+            return float(data[0]["lat"]), float(data[0]["lon"]), "nominatim", display
     except Exception:
         pass
 
@@ -604,8 +609,10 @@ def _lookup_attom_property(address: str, attom_api_key: str) -> dict:
 
     try:
         # Parse address into line1 + line2 (city, state zip)
-        # "1685 Brighton Cir, Castle Rock, CO 80104" → ("1685 Brighton Cir", "Castle Rock, CO 80104")
-        parts = address.split(",", 1)
+        # "4136 Prairie Fire Cir, Longmont, CO 80504, USA" → ("4136 Prairie Fire Cir", "Longmont, CO 80504")
+        # Strip trailing country (", USA", ", United States") that Google geocoder appends
+        clean_addr = re.sub(r',\s*(USA|United States)\s*$', '', address, flags=re.IGNORECASE)
+        parts = clean_addr.split(",", 1)
         if len(parts) < 2:
             print(f"    ✗ ATTOM: cannot parse address: {address}")
             return {}
@@ -1111,10 +1118,15 @@ def lookup_property(address: str) -> PropertyData:
     # ── Step 1: Geocode ─────────────────────────────────────────────────
     print(f"  Geocoding: {address}")
     try:
-        prop.lat, prop.lng, geo_source = geocode_address(
+        prop.lat, prop.lng, geo_source, formatted_addr = geocode_address(
             address, keys["google_api_key"]
         )
         prop.sources["geocode"] = geo_source
+        # Use canonical address from geocoder for all downstream lookups
+        if formatted_addr and formatted_addr != address:
+            print(f"    → Canonical address: {formatted_addr}")
+            prop.address = formatted_addr
+            address = formatted_addr  # use for ATTOM/RapidAPI too
         print(f"    → {prop.lat:.6f}, {prop.lng:.6f} (via {geo_source})")
     except LookupError as e:
         prop.warnings.append(str(e))
@@ -1398,20 +1410,16 @@ def fetch_property_images(
     os.makedirs(output_dir, exist_ok=True)
 
     # ── Street View ────────────────────────────────────────────────────
-    # Use the address (not lat/lng) so Google finds the best panorama
-    # facing the property. Add source=outdoor to avoid indoor panos,
-    # and use the metadata endpoint first to get the heading toward the
-    # building from the nearest streetview camera position.
+    # 1. Use metadata API to find the nearest streetview camera position
+    # 2. Compute heading FROM camera TO property (so camera faces the house)
+    # 3. Fetch the image with that heading
     try:
         import math as _math
-        import urllib.parse as _urlparse
 
-        encoded_addr = _urlparse.quote(address)
-
-        # Step 1: Get Street View metadata to find camera position
+        # Step 1: Get Street View metadata — find nearest panorama
         meta_url = (
             f"https://maps.googleapis.com/maps/api/streetview/metadata"
-            f"?location={encoded_addr}&source=outdoor&key={google_api_key}"
+            f"?location={lat},{lng}&source=outdoor&key={google_api_key}"
         )
         meta_resp = requests.get(meta_url, timeout=_TIMEOUT)
         heading_param = ""
@@ -1427,12 +1435,13 @@ def fetch_property_images(
                      - _math.sin(_math.radians(cam_lat)) * _math.cos(_math.radians(lat)) * _math.cos(dlng))
                 heading = (_math.degrees(_math.atan2(y, x)) + 360) % 360
                 heading_param = f"&heading={heading:.1f}"
+                print(f"    → Street View camera at ({cam_lat:.6f}, {cam_lng:.6f}), heading={heading:.1f}°")
 
-        # Step 2: Fetch the image using address + computed heading
+        # Step 2: Fetch the image using lat/lng + computed heading
         sv_url = (
             f"https://maps.googleapis.com/maps/api/streetview"
-            f"?size=640x480&scale=2&location={encoded_addr}"
-            f"&source=outdoor&fov=80{heading_param}&key={google_api_key}"
+            f"?size=640x480&scale=2&location={lat},{lng}"
+            f"&source=outdoor&fov=80&pitch=5{heading_param}&key={google_api_key}"
         )
         resp = requests.get(sv_url, timeout=_TIMEOUT)
         if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
