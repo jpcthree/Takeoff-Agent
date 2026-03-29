@@ -119,12 +119,19 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
   // Single source of truth: store items. No local copy, no sync race conditions.
   const items = state.lineItems;
 
-  // Filter columns based on trade — sheets only relevant for drywall
+  // Filter columns based on trade — sheets/squares column for drywall and roofing only
   const columns = useMemo(() => {
-    if (tradeFilter && tradeFilter !== 'drywall') {
+    const tradesWithSheets = new Set(['drywall', 'roofing']);
+    if (tradeFilter && !tradesWithSheets.has(tradeFilter)) {
       return COLUMNS.filter((col) => col.key !== 'sheets');
     }
-    return COLUMNS;
+    // Rename label based on trade context
+    return COLUMNS.map((col) => {
+      if (col.key === 'sheets' && tradeFilter === 'roofing') {
+        return { ...col, label: 'Squares' };
+      }
+      return col;
+    });
   }, [tradeFilter]);
 
   const [collapsedTrades, setCollapsedTrades] = useState<Set<string>>(new Set());

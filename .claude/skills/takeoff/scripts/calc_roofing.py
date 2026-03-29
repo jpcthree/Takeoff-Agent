@@ -123,29 +123,42 @@ def _roofing_items(building: BuildingModel, costs: dict) -> list[LineItem]:
         total_actual_area, "sf", 0, 0, rate,
     ))
 
-    # ── Shingles ──────────────────────────────────────────────────────
+    # ── Shingles — priced per square (1 square = 100 SF) ────────────
     squares = total_actual_area / 100
-    bundles = math.ceil(squares * 3 * waste)
+    squares_with_waste = math.ceil(squares * waste)
     shingle_key = _shingle_cost_key(shingle_type)
     shingle_label = shingle_type.replace("_", "-")
-    items.append(_item(
-        "roofing", "Shingles", f"{shingle_label.title()} asphalt shingles (bundle)",
-        bundles, "bundle", _lookup_cost(costs, "roofing", shingle_key,
-                                         _lookup_cost(costs, "roofing", "shingle_architectural", 38.0)),
+    # Cost per bundle → cost per square (3 bundles per square)
+    cost_per_bundle = _lookup_cost(costs, "roofing", shingle_key,
+                                    _lookup_cost(costs, "roofing", "shingle_architectural", 38.0))
+    cost_per_square_shingle = cost_per_bundle * 3
+    shingle_item = _item(
+        "roofing", "Shingles", f"{shingle_label.title()} asphalt shingles",
+        squares_with_waste, "square", cost_per_square_shingle,
         total_actual_area * 0.04, rate,
-    ))
+    )
+    shingle_item.sheets = squares_with_waste  # sheets field = squares for roofing
+    shingle_item.calculate_totals()
+    items.append(shingle_item)
 
-    # ── Underlayment ──────────────────────────────────────────────────
+    # ── Underlayment — priced per square ──────────────────────────────
     ul_key = _underlayment_cost_key(underlayment_type)
     ul_coverage = _underlayment_coverage(underlayment_type)
     ul_label = underlayment_type.replace("_", " ").title()
     rolls = math.ceil(total_actual_area / ul_coverage * waste)
-    items.append(_item(
-        "roofing", "Underlayment", f"{ul_label} underlayment (roll)",
-        rolls, "roll", _lookup_cost(costs, "roofing", ul_key,
-                                     _lookup_cost(costs, "roofing", "underlayment_synthetic", 65.0)),
+    # Convert roll cost to per-square cost
+    cost_per_roll = _lookup_cost(costs, "roofing", ul_key,
+                                  _lookup_cost(costs, "roofing", "underlayment_synthetic", 65.0))
+    sqft_per_roll = ul_coverage
+    cost_per_square_ul = round(cost_per_roll / (sqft_per_roll / 100), 2)
+    ul_item = _item(
+        "roofing", "Underlayment", f"{ul_label} underlayment",
+        squares_with_waste, "square", cost_per_square_ul,
         rolls * 0.3, rate,
-    ))
+    )
+    ul_item.sheets = squares_with_waste  # sheets field = squares for roofing
+    ul_item.calculate_totals()
+    items.append(ul_item)
 
     # ── Ice and water shield (eave + valleys) ─────────────────────────
     ice_sqft = (total_eave * 3) + (total_valley * 3)
