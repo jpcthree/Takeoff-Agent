@@ -119,6 +119,14 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
   // Single source of truth: store items. No local copy, no sync race conditions.
   const items = state.lineItems;
 
+  // Filter columns based on trade — sheets only relevant for drywall
+  const columns = useMemo(() => {
+    if (tradeFilter && tradeFilter !== 'drywall') {
+      return COLUMNS.filter((col) => col.key !== 'sheets');
+    }
+    return COLUMNS;
+  }, [tradeFilter]);
+
   const [collapsedTrades, setCollapsedTrades] = useState<Set<string>>(new Set());
   const [editingCell, setEditingCell] = useState<{ id: string; key: string } | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -272,7 +280,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
   // Keyboard navigation
   const { focusedCell, handleKeyDown, handleCellClick, tableRef } = useSpreadsheetKeyboard({
     rows: rowMeta,
-    columns: COLUMNS,
+    columns,
     onStartEdit: handleStartEdit,
     onCommitEdit: handleCommitEdit,
     onCancelEdit: handleCancelEdit,
@@ -325,7 +333,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
             {/* Header */}
             <thead className="sticky top-0 z-10">
               <tr>
-                {COLUMNS.map((col) => (
+                {columns.map((col) => (
                   <th
                     key={col.key}
                     className={[
@@ -358,7 +366,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                         onClick={() => toggleTrade(trade)}
                         className="bg-slate-100 cursor-pointer hover:bg-slate-200 select-none"
                       >
-                        <td colSpan={COLUMNS.length} className="px-2 py-2 font-semibold text-gray-800">
+                        <td colSpan={columns.length} className="px-2 py-2 font-semibold text-gray-800">
                           <span className="inline-flex items-center gap-1.5">
                             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             {getTradeLabel(trade)}
@@ -450,25 +458,25 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                         ? 'border-r border-slate-700'
                         : 'border-r border-gray-200';
                       const padY = isSingleTradeMode ? 'py-2' : 'py-1.5';
+                      const totalValues: Record<string, React.ReactNode> = {
+                        description: isSingleTradeMode ? 'Total' : `${getTradeLabel(trade)} Subtotal`,
+                        materialTotal: formatCurrency(sub.materialTotal),
+                        laborTotal: formatCurrency(sub.laborTotal),
+                        laborPlusMaterials: formatCurrency(sub.laborPlusMaterials),
+                        amount: formatCurrency(sub.amount),
+                        grossProfit: formatCurrency(sub.grossProfit),
+                        gpm: formatPct(sub.gpm),
+                      };
                       return (
                         <tr className={totalStyle}>
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} ${borderStyle}`}>{isSingleTradeMode ? 'Total' : `${getTradeLabel(trade)} Subtotal`}</td>
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.materialTotal)}</td>
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.laborTotal)}</td>
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.laborPlusMaterials)}</td>
-                          <td className={`px-2 ${padY} ${borderStyle}`} />
-                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.amount)}</td>
-                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.grossProfit)}</td>
-                          <td className={`px-2 ${padY} text-right`}>{formatPct(sub.gpm)}</td>
+                          {columns.map((col, i) => (
+                            <td
+                              key={col.key}
+                              className={`px-2 ${padY} ${i < columns.length - 1 ? borderStyle : ''} ${['materialTotal','laborTotal','laborPlusMaterials','amount','grossProfit','gpm'].includes(col.key) ? 'text-right' : ''}`}
+                            >
+                              {totalValues[col.key] || ''}
+                            </td>
+                          ))}
                         </tr>
                       );
                     })()}
@@ -479,25 +487,25 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
               {/* Grand total row */}
               {!isSingleTradeMode && (() => {
                 flatRowIndex++;
+                const gtValues: Record<string, React.ReactNode> = {
+                  description: 'Grand Total',
+                  materialTotal: formatCurrency(grandTotal.materialTotal),
+                  laborTotal: formatCurrency(grandTotal.laborTotal),
+                  laborPlusMaterials: formatCurrency(grandTotal.laborPlusMaterials),
+                  amount: formatCurrency(grandTotal.amount),
+                  grossProfit: formatCurrency(grandTotal.grossProfit),
+                  gpm: formatPct(grandTotal.gpm),
+                };
                 return (
                   <tr className="bg-slate-800 text-white font-semibold">
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 border-r border-slate-700">Grand Total</td>
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 text-right border-r border-slate-700">{formatCurrency(grandTotal.materialTotal)}</td>
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 text-right border-r border-slate-700">{formatCurrency(grandTotal.laborTotal)}</td>
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 text-right border-r border-slate-700">{formatCurrency(grandTotal.laborPlusMaterials)}</td>
-                    <td className="px-2 py-2 border-r border-slate-700" />
-                    <td className="px-2 py-2 text-right border-r border-slate-700">{formatCurrency(grandTotal.amount)}</td>
-                    <td className="px-2 py-2 text-right border-r border-slate-700">{formatCurrency(grandTotal.grossProfit)}</td>
-                    <td className="px-2 py-2 text-right">{formatPct(grandTotal.gpm)}</td>
+                    {columns.map((col, i) => (
+                      <td
+                        key={col.key}
+                        className={`px-2 py-2 ${i < columns.length - 1 ? 'border-r border-slate-700' : ''} ${['materialTotal','laborTotal','laborPlusMaterials','amount','grossProfit','gpm'].includes(col.key) ? 'text-right' : ''}`}
+                      >
+                        {gtValues[col.key] || ''}
+                      </td>
+                    ))}
                   </tr>
                 );
               })()}
