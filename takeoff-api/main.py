@@ -70,6 +70,30 @@ async def health():
     }
 
 
+@app.get("/debug/attom-test")
+async def debug_attom_test():
+    """Test ATTOM API directly on production."""
+    import traceback
+    try:
+        from property_lookup import _load_api_keys, _lookup_attom_property
+        keys = _load_api_keys()
+        attom_key = keys.get("attom_api_key", "")
+        result = _lookup_attom_property(
+            "611 Branding Iron Ln, Castle Rock, CO 80104",
+            attom_key,
+        )
+        return {
+            "attom_key_len": len(attom_key),
+            "attom_key_prefix": attom_key[:8] if attom_key else "",
+            "result": result,
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
 @app.get("/costs/default")
 async def get_default_costs():
     """Return the default cost database."""
