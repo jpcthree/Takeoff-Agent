@@ -116,8 +116,7 @@ async def estimate_from_address(req: EstimateRequest):
         ins_items = _build_insulation_scope(model, era_config, climate_zone)
         dw_items = calculate_drywall(model, costs)
         rtg_items = calculate_roofing(model, costs)
-        gut_items = [it for it in rtg_items if it.trade == "gutters"]
-        all_items = ins_items + dw_items + gut_items
+        all_items = ins_items + dw_items + rtg_items
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Calculator error: {e}")
 
@@ -173,9 +172,55 @@ async def estimate_from_address(req: EstimateRequest):
     roof_lines = _build_roof_info(prop, era, roof_classification)
     code_lines = _build_code_requirements_notes(era_config, climate_zone)
 
+    # ── Build trade-specific code requirement notes ──────────────────
+    # Roofing code requirements
+    roofing_code_lines = []
+    roofing_code_lines.append(f"Applicable Code: IRC/IBC — Climate Zone {climate_zone}")
+    roofing_code_lines.append(f"Roof Material: {(prop.roof_material or 'unknown').replace('_', ' ').title()}")
+    if prop.roof_type and prop.roof_type != "unknown":
+        roofing_code_lines.append(f"Roof Type: {prop.roof_type.replace('_', ' ').title()}")
+    roofing_code_lines.append("")
+    roofing_code_lines.append("Ice & Water Shield: Required at eaves in Climate Zones 5+")
+    roofing_code_lines.append("  → Must extend 24\" inside exterior wall line (IRC R905.1.2)")
+    roofing_code_lines.append("Underlayment: Required beneath all roof coverings (IRC R905.1.1)")
+    roofing_code_lines.append("  → Single layer for slopes ≥ 4:12, double layer for 2:12-4:12")
+    roofing_code_lines.append("Flashing: Required at wall intersections, valleys, chimneys, vents (IRC R903.2)")
+    roofing_code_lines.append("Ventilation: 1:150 net free area ratio (or 1:300 with balanced intake/exhaust)")
+    roofing_code_lines.append("  → IRC R806.1 — cross ventilation required for enclosed attics")
+    roofing_code_lines.append("Drip Edge: Required at eaves and rakes (IRC R905.2.8.5)")
+    roofing_code_lines.append("Wind Rating: Check local wind speed zone for shingle rating requirements")
+
+    # Drywall code requirements
+    drywall_code_lines = []
+    drywall_code_lines.append(f"Applicable Code: IRC — Climate Zone {climate_zone}")
+    drywall_code_lines.append("")
+    drywall_code_lines.append("Fire Separation: 1/2\" gypsum board on garage side of garage-house wall (IRC R302.6)")
+    drywall_code_lines.append("  → 5/8\" Type X required for garage ceiling beneath habitable space")
+    drywall_code_lines.append("Moisture Resistance: Moisture-resistant (green board) or cement board")
+    drywall_code_lines.append("  → Required within 3' of shower/tub (IRC R702.4.2)")
+    drywall_code_lines.append("Fastening: Screws 12\" OC field, 8\" OC edges for walls; 12\" OC for ceilings")
+    drywall_code_lines.append("  → Nails 7\" OC field, 7\" OC edges (IRC R702.3.5)")
+    drywall_code_lines.append("Joint Treatment: All joints and fastener heads must be finished (IRC R702.3.1)")
+
+    # Gutters code requirements
+    gutters_code_lines = []
+    gutters_code_lines.append(f"Applicable Code: IRC — Climate Zone {climate_zone}")
+    gutters_code_lines.append("")
+    gutters_code_lines.append("Drainage: Gutters must discharge 6'+ from foundation (IRC R801.3)")
+    gutters_code_lines.append("  → Or connect to approved drainage system")
+    gutters_code_lines.append("Sizing: Minimum 5\" K-style for residential; 6\" for large roof areas")
+    gutters_code_lines.append("Slope: 1/16\" per foot minimum toward downspouts")
+    gutters_code_lines.append("Downspouts: One per 40 LF of gutter run (typical)")
+    gutters_code_lines.append("  → 2\"×3\" minimum for 5\" gutters, 3\"×4\" for 6\" gutters")
+    gutters_code_lines.append("Hangers: Maximum 36\" OC; 24\" OC in snow/ice zones")
+    gutters_code_lines.append("Snow/Ice: Consider gutter guards and heating cables in Climate Zone 5+")
+
     # Property Summary is now shown in PropertyHero card — not in notes
     property_notes = [
         ("Roof Information", roof_lines),
+        ("Roofing Code Requirements", roofing_code_lines),
+        ("Drywall Code Requirements", drywall_code_lines),
+        ("Gutters Code Requirements", gutters_code_lines),
     ]
     insulation_notes = [
         ("Building Code Requirements", code_lines),

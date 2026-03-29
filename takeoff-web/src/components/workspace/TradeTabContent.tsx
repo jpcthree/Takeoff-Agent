@@ -72,14 +72,22 @@ function TradeTabContent({
   const tradeNotes = notes?.filter((note) => {
     const titleLower = note.title.toLowerCase();
     const tradeLower = trade.toLowerCase();
+    const tradeLabelLower = getTradeLabel(trade).toLowerCase();
     // Filter out Property Summary — that data lives in PropertyHero now
     if (titleLower.includes('property summary')) return false;
-    // Building Code Requirements only on insulation tab
-    if (titleLower.includes('code')) return tradeLower === 'insulation';
+    // Trade-specific code requirements: "Roofing Code Requirements" → roofing tab
+    // "Building Code Requirements" (general insulation) → insulation tab only
+    if (titleLower.includes('code')) {
+      return (
+        titleLower.includes(tradeLower) ||
+        titleLower.includes(tradeLabelLower) ||
+        (titleLower.includes('building code') && tradeLower === 'insulation')
+      );
+    }
     // Match notes that mention the trade name, or general notes
     return (
       titleLower.includes(tradeLower) ||
-      titleLower.includes(getTradeLabel(trade).toLowerCase()) ||
+      titleLower.includes(tradeLabelLower) ||
       titleLower.includes('general')
     );
   });

@@ -384,7 +384,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
 
                         return (
                           <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/80">
-                            {COLUMNS.map((col, colIdx) => {
+                            {columns.map((col, colIdx) => {
                               const isEditing = editingCell?.id === item.id && editingCell?.key === col.key;
                               const isEditable = col.editable;
                               const isFocused = focusedCell?.row === currentRowIdx && focusedCell?.col === colIdx;
