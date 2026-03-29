@@ -192,6 +192,9 @@ function RetrofitWorkspace() {
               <TradeTabContent
                 trade={activeTrade}
                 notes={activeTradeNotes}
+                propertyData={propertyData}
+                roofClassification={roofClassification}
+                assumptions={state.assumptions}
               />
             </div>
           )}

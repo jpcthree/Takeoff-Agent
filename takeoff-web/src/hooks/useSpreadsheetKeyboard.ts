@@ -14,7 +14,7 @@ interface UseSpreadsheetKeyboardOptions {
   /** Flat list of row metadata in render order */
   rows: RowMeta[];
   /** Column definitions — need to know which are editable */
-  columns: { key: string; editable?: boolean }[];
+  columns: { key: string; editable?: boolean; type?: 'number' | 'text' }[];
   /** Callback when a cell should enter edit mode */
   onStartEdit: (itemId: string, colKey: string, initialChar?: string) => void;
   /** Callback when edit should be committed (Enter key while editing) */
@@ -177,11 +177,16 @@ export function useSpreadsheetKeyboard({
           break;
         }
         default: {
-          // Typing a digit/decimal starts edit on editable cells
-          if (/^[0-9.]$/.test(e.key)) {
-            const column = columns[col];
-            const rowMeta = rows[row];
-            if (column?.editable && rowMeta?.itemId) {
+          // Typing starts edit on editable cells
+          // Digits/decimal for number columns, any printable char for text columns
+          const column = columns[col];
+          const rowMeta = rows[row];
+          if (column?.editable && rowMeta?.itemId && e.key.length === 1) {
+            const isNumber = column.type !== 'text';
+            const isValidStart = isNumber
+              ? /^[0-9.]$/.test(e.key)
+              : /^[a-zA-Z0-9 .,\-/()#]$/.test(e.key);
+            if (isValidStart) {
               e.preventDefault();
               onStartEdit(rowMeta.itemId, column.key, e.key);
             }

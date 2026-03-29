@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { SpreadsheetToolbar } from './SpreadsheetToolbar';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useSpreadsheetKeyboard, type RowMeta } from '@/hooks/useSpreadsheetKeyboard';
@@ -27,11 +27,11 @@ function computeItem(item: SpreadsheetLineItem): SpreadsheetLineItem {
 // Columns config
 // ---------------------------------------------------------------------------
 const COLUMNS = [
-  { key: 'category', label: 'Category', width: 'w-[120px]' },
-  { key: 'description', label: 'Description', width: 'min-w-[200px] flex-1' },
+  { key: 'category', label: 'Category', width: 'w-[120px]', editable: true, type: 'text' as const },
+  { key: 'description', label: 'Description', width: 'min-w-[200px] flex-1', editable: true, type: 'text' as const },
   { key: 'codeRequirement', label: 'Code', width: 'w-[120px]' },
-  { key: 'quantity', label: 'Qty', width: 'w-[70px]', align: 'right' as const },
-  { key: 'unit', label: 'Unit', width: 'w-[60px]', align: 'center' as const },
+  { key: 'quantity', label: 'Qty', width: 'w-[70px]', align: 'right' as const, editable: true },
+  { key: 'unit', label: 'Unit', width: 'w-[60px]', align: 'center' as const, editable: true, type: 'text' as const },
   { key: 'sheets', label: 'Sheets', width: 'w-[65px]', align: 'right' as const },
   { key: 'unitCost', label: 'Unit Cost', width: 'w-[90px]', align: 'right' as const, editable: true },
   { key: 'materialTotal', label: 'Material Total', width: 'w-[100px]', align: 'right' as const },
@@ -45,6 +45,9 @@ const COLUMNS = [
   { key: 'grossProfit', label: 'Gross Profit', width: 'w-[100px]', align: 'right' as const },
   { key: 'gpm', label: 'GPM', width: 'w-[70px]', align: 'right' as const },
 ];
+
+// Text columns don't trigger recalculation
+const TEXT_COLUMNS = new Set(['category', 'description', 'unit']);
 
 function formatCurrency(val: number): string {
   return val.toLocaleString('en-US', {
@@ -112,7 +115,7 @@ interface SpreadsheetTableProps {
 }
 
 function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
-  const { state, updateLineItem } = useProjectStore();
+  const { state, updateLineItem, addLineItem } = useProjectStore();
   // Single source of truth: store items. No local copy, no sync race conditions.
   const items = state.lineItems;
 
@@ -207,20 +210,17 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
     (itemId: string, colKey: string, initialChar?: string) => {
       const item = items.find((i) => i.id === itemId);
       if (!item) return;
-      const rawVal = item[colKey as keyof SpreadsheetLineItem] as number;
+      const rawVal = item[colKey as keyof SpreadsheetLineItem];
       setEditingCell({ id: itemId, key: colKey });
-      setEditValue(initialChar ?? String(rawVal));
+      setEditValue(initialChar ?? String(rawVal ?? ''));
     },
     [items]
   );
 
   const handleCommitEdit = useCallback(() => {
     if (!editingCell) return;
-    const numVal = parseFloat(editValue);
-    if (isNaN(numVal)) {
-      setEditingCell(null);
-      return;
-    }
+
+    const isTextCol = TEXT_COLUMNS.has(editingCell.key);
 
     // Find the current item from the store (single source of truth)
     const editedItem = items.find((i) => i.id === editingCell.id);
@@ -229,26 +229,39 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
       return;
     }
 
-    // Track the adjustment for learning (if project is persisted)
-    if (state.projectMeta.id) {
-      const originalValue = editedItem[editingCell.key as keyof SpreadsheetLineItem] as number;
-      if (originalValue !== numVal) {
-        trackAdjustment({
-          project_id: state.projectMeta.id,
-          trade: editedItem.trade,
-          item_description: editedItem.description,
-          field_changed: editingCell.key,
-          original_value: originalValue,
-          new_value: numVal,
-          source: 'user',
-        }).catch(() => {}); // fire-and-forget
+    if (isTextCol) {
+      // Text columns — just update the string value, no recalculation
+      updateLineItem(editingCell.id, { [editingCell.key]: editValue } as Partial<SpreadsheetLineItem>);
+    } else {
+      // Numeric columns — parse, validate, recompute
+      const numVal = parseFloat(editValue);
+      if (isNaN(numVal)) {
+        setEditingCell(null);
+        return;
       }
+
+      // Track the adjustment for learning (if project is persisted)
+      if (state.projectMeta.id) {
+        const originalValue = editedItem[editingCell.key as keyof SpreadsheetLineItem] as number;
+        if (originalValue !== numVal) {
+          trackAdjustment({
+            project_id: state.projectMeta.id,
+            trade: editedItem.trade,
+            item_description: editedItem.description,
+            field_changed: editingCell.key,
+            original_value: originalValue,
+            new_value: numVal,
+            source: 'user',
+          }).catch(() => {}); // fire-and-forget
+        }
+      }
+
+      // Recompute and update the store directly
+      const updated = { ...editedItem, [editingCell.key]: numVal };
+      const recomputed = computeItem(updated);
+      updateLineItem(editingCell.id, recomputed);
     }
 
-    // Recompute and update the store directly — no local state needed
-    const updated = { ...editedItem, [editingCell.key]: numVal };
-    const recomputed = computeItem(updated);
-    updateLineItem(editingCell.id, recomputed);
     setEditingCell(null);
   }, [editingCell, editValue, updateLineItem, items, state.projectMeta.id]);
 
@@ -395,8 +408,8 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                                 >
                                   {isEditing ? (
                                     <input
-                                      type="number"
-                                      step="any"
+                                      type={col.type === 'text' ? 'text' : 'number'}
+                                      step={col.type === 'text' ? undefined : 'any'}
                                       value={editValue}
                                       onChange={(e) => setEditValue(e.target.value)}
                                       onBlur={handleCommitEdit}
@@ -412,11 +425,10 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                                         if (e.key === 'Tab') {
                                           e.preventDefault();
                                           handleCommitEdit();
-                                          // Let the keyboard hook handle Tab navigation
                                         }
                                       }}
                                       autoFocus
-                                      className="w-full bg-white border border-blue-500 rounded px-1 py-0.5 text-right text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      className={`w-full bg-white border border-blue-500 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 ${col.type === 'text' ? 'text-left' : 'text-right'}`}
                                     />
                                   ) : (
                                     getCellValue(item, col.key)
@@ -491,6 +503,43 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
               })()}
             </tbody>
           </table>
+        )}
+
+        {/* Add Item button */}
+        {hasItems && (
+          <div className="px-3 py-2 border-t border-gray-200">
+            <button
+              onClick={() => {
+                const trade = tradeFilter || filteredTrades[0] || 'misc';
+                const newItem: SpreadsheetLineItem = {
+                  id: `user-${Date.now()}`,
+                  trade,
+                  category: '',
+                  description: '',
+                  quantity: 0,
+                  unit: 'EA',
+                  unitCost: 0,
+                  laborRatePct: 0,
+                  unitPrice: 0,
+                  materialTotal: 0,
+                  materialPct: 0,
+                  laborTotal: 0,
+                  laborPct: 0,
+                  laborPlusMaterials: 0,
+                  amount: 0,
+                  grossProfit: 0,
+                  gpm: 0,
+                  sortOrder: items.length,
+                  isUserAdded: true,
+                };
+                addLineItem(newItem);
+              }}
+              className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Line Item
+            </button>
+          </div>
         )}
       </div>
     </div>
