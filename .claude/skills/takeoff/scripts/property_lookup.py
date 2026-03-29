@@ -1397,11 +1397,11 @@ def fetch_property_images(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Street View Static API
+    # Street View Static API — 1280x960 (scale=2 for high-DPI clarity)
     try:
         url = (
             f"https://maps.googleapis.com/maps/api/streetview"
-            f"?size=640x480&location={lat},{lng}&key={google_api_key}"
+            f"?size=640x480&scale=2&location={lat},{lng}&key={google_api_key}"
         )
         resp = requests.get(url, timeout=_TIMEOUT)
         if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
@@ -1412,11 +1412,11 @@ def fetch_property_images(
     except Exception as e:
         print(f"    ✗ Street View fetch failed: {e}")
 
-    # Maps Static API — satellite aerial view
+    # Maps Static API — satellite aerial view (scale=2 for 1280x1280 hi-res)
     try:
         url = (
             f"https://maps.googleapis.com/maps/api/staticmap"
-            f"?center={lat},{lng}&zoom=20&size=640x640"
+            f"?center={lat},{lng}&zoom=20&size=640x640&scale=2"
             f"&maptype=satellite&key={google_api_key}"
         )
         resp = requests.get(url, timeout=_TIMEOUT)

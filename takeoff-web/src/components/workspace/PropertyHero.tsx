@@ -134,55 +134,74 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
     bullets.push(`Last Sale: ${parts.join(' ')}`);
   }
 
+  // Determine layout: side-by-side when both images, full-width when one, placeholder when none
+  const hasBothImages = !!streetView && !!satellite;
+  const hasSingleImage = !!heroImage && !hasBothImages;
+
   return (
     <div className="bg-white">
-      {/* Hero image section */}
-      <div className="relative w-full h-[280px] bg-gray-200 overflow-hidden">
-        {heroImage ? (
-          <img
-            src={heroImage}
-            alt={streetView ? 'Street view' : 'Satellite view'}
-            className="w-full h-full object-cover cursor-pointer"
-            onClick={() => openLightbox(heroImage, streetView ? 'Street view' : 'Satellite view')}
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900 text-white">
-            <Home className="h-12 w-12 text-slate-400 mb-3" />
-            <p className="text-lg font-semibold text-slate-300">{propertyData.address}</p>
-            <p className="text-xs text-slate-500 mt-1">No property images available</p>
-          </div>
-        )}
-
-        {/* Gradient overlay */}
-        {heroImage && (
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-        )}
-
-        {/* Address overlay */}
-        {heroImage && (
-          <div className="absolute bottom-4 left-5 right-5 pointer-events-none">
-            <div className="flex items-center gap-2 text-white">
-              <MapPin className="h-5 w-5 shrink-0" />
-              <h2 className="text-xl font-bold truncate drop-shadow-md">
-                {propertyData.address}
-              </h2>
-            </div>
-          </div>
-        )}
-
-        {/* Satellite thumbnail (clickable) */}
-        {streetView && satellite && (
-          <div
-            className="absolute top-3 right-3 w-24 h-24 rounded-lg overflow-hidden border-2 border-white shadow-lg cursor-pointer hover:border-blue-300 transition-colors"
-            onClick={() => openLightbox(satellite, 'Satellite view')}
+      {/* Image section */}
+      {hasBothImages ? (
+        /* ── Side-by-side layout ─────────────────────────────────────── */
+        <div className="flex w-full h-[360px]">
+          {/* Street View — left half */}
+          <div className="relative flex-1 bg-gray-200 overflow-hidden cursor-pointer group"
+            onClick={() => openLightbox(streetView!, 'Street view')}
           >
             <img
-              src={satellite}
-              alt="Satellite view"
-              className="w-full h-full object-cover"
+              src={streetView!}
+              alt="Street view"
+              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
             />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
+            <div className="absolute bottom-3 left-4 pointer-events-none">
+              <span className="text-xs font-medium text-white/80 bg-black/30 px-2 py-1 rounded">Street View</span>
+            </div>
           </div>
-        )}
+          {/* Satellite — right half */}
+          <div className="relative flex-1 bg-gray-200 overflow-hidden cursor-pointer group border-l-2 border-white"
+            onClick={() => openLightbox(satellite!, 'Satellite view')}
+          >
+            <img
+              src={satellite!}
+              alt="Satellite view"
+              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
+            <div className="absolute bottom-3 left-4 pointer-events-none">
+              <span className="text-xs font-medium text-white/80 bg-black/30 px-2 py-1 rounded">Satellite</span>
+            </div>
+          </div>
+        </div>
+      ) : hasSingleImage ? (
+        /* ── Single image full-width ─────────────────────────────────── */
+        <div className="relative w-full h-[360px] bg-gray-200 overflow-hidden cursor-pointer"
+          onClick={() => openLightbox(heroImage!, streetView ? 'Street view' : 'Satellite view')}
+        >
+          <img
+            src={heroImage!}
+            alt={streetView ? 'Street view' : 'Satellite view'}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
+        </div>
+      ) : (
+        /* ── No images placeholder ───────────────────────────────────── */
+        <div className="w-full h-[200px] flex flex-col items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900 text-white">
+          <Home className="h-12 w-12 text-slate-400 mb-3" />
+          <p className="text-lg font-semibold text-slate-300">{propertyData.address}</p>
+          <p className="text-xs text-slate-500 mt-1">No property images available</p>
+        </div>
+      )}
+
+      {/* Address bar */}
+      <div className="px-5 py-3 border-b border-gray-200 bg-white">
+        <div className="flex items-center gap-2">
+          <MapPin className="h-5 w-5 text-gray-400 shrink-0" />
+          <h2 className="text-lg font-bold text-gray-900 truncate">
+            {propertyData.address}
+          </h2>
+        </div>
       </div>
 
       {/* Stats bar */}
