@@ -428,28 +428,35 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                         );
                       })}
 
-                    {/* Subtotal row */}
-                    {!isSingleTradeMode && !isCollapsed && sub && (() => {
+                    {/* Subtotal row — shown in both multi-trade and single-trade modes */}
+                    {(isSingleTradeMode || !isCollapsed) && sub && (() => {
                       flatRowIndex++;
+                      const totalStyle = isSingleTradeMode
+                        ? 'bg-slate-800 text-white font-semibold'
+                        : 'bg-emerald-50 font-semibold';
+                      const borderStyle = isSingleTradeMode
+                        ? 'border-r border-slate-700'
+                        : 'border-r border-gray-200';
+                      const padY = isSingleTradeMode ? 'py-2' : 'py-1.5';
                       return (
-                        <tr className="bg-emerald-50 font-semibold">
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 border-r border-gray-200">{getTradeLabel(trade)} Subtotal</td>
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 text-right border-r border-gray-200">{formatCurrency(sub.materialTotal)}</td>
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 text-right border-r border-gray-200">{formatCurrency(sub.laborTotal)}</td>
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 text-right border-r border-gray-200">{formatCurrency(sub.laborPlusMaterials)}</td>
-                          <td className="px-2 py-1.5 border-r border-gray-200" />
-                          <td className="px-2 py-1.5 text-right border-r border-gray-200">{formatCurrency(sub.amount)}</td>
-                          <td className="px-2 py-1.5 text-right border-r border-gray-200">{formatCurrency(sub.grossProfit)}</td>
-                          <td className="px-2 py-1.5 text-right">{formatPct(sub.gpm)}</td>
+                        <tr className={totalStyle}>
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} ${borderStyle}`}>{isSingleTradeMode ? 'Total' : `${getTradeLabel(trade)} Subtotal`}</td>
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.materialTotal)}</td>
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.laborTotal)}</td>
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.laborPlusMaterials)}</td>
+                          <td className={`px-2 ${padY} ${borderStyle}`} />
+                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.amount)}</td>
+                          <td className={`px-2 ${padY} text-right ${borderStyle}`}>{formatCurrency(sub.grossProfit)}</td>
+                          <td className={`px-2 ${padY} text-right`}>{formatPct(sub.gpm)}</td>
                         </tr>
                       );
                     })()}

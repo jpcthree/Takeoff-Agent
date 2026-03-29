@@ -112,11 +112,11 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
     );
   }
 
-  // Estimated market value
+  // Estimated market value (ATTOM market value preferred, assessed value as fallback)
   if (propertyData.estimated_value > 0) {
     bullets.push(`Est. Market Value: ${formatCurrency(propertyData.estimated_value)}`);
   } else if (propertyData.total_value > 0) {
-    bullets.push(`Assessed Value: ${formatCurrency(propertyData.total_value)}`);
+    bullets.push(`Est. Market Value: ${formatCurrency(propertyData.total_value)}`);
   }
 
   // Last sale
