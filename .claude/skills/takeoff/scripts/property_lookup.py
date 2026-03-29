@@ -1272,6 +1272,19 @@ def lookup_property(address: str) -> PropertyData:
     elif not _has_property_data:
         prop.warnings.append("No property data API available — using era-based heuristics.")
 
+    # ── Heuristic: Validate story count against sqft / footprint ────────
+    # If total_sqft is much larger than the building footprint, the house
+    # likely has more stories than reported in tax records.
+    if prop.total_sqft and prop.building_footprint_area_m2:
+        footprint_sqft = prop.building_footprint_area_m2 * 10.7639
+        if footprint_sqft > 0:
+            implied_stories = prop.total_sqft / footprint_sqft
+            if implied_stories > 1.4 and prop.stories <= 1:
+                corrected = round(implied_stories)
+                print(f"    → Story heuristic: {prop.total_sqft} SF / {footprint_sqft:.0f} SF footprint = {implied_stories:.1f}x → correcting {prop.stories} → {corrected} stories")
+                prop.stories = corrected
+                prop.sources["stories"] = f"{prop.sources.get('stories', 'heuristic')}_corrected"
+
     # ── Summary ─────────────────────────────────────────────────────────
     print("\n  Property Data Summary:")
     print(f"    Address:     {prop.address}")

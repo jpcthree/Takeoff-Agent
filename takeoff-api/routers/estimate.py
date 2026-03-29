@@ -105,22 +105,9 @@ async def estimate_from_address(req: EstimateRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
 
-    # ── Step 3: Generate BuildingModel ────────────────────────────────
-    try:
-        model, assumptions = build_model(prop, era_config, costs, climate_zone)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model generation failed: {e}")
-
-    # ── Step 4: Run calculators ───────────────────────────────────────
-    try:
-        ins_items = _build_insulation_scope(model, era_config, climate_zone)
-        dw_items = calculate_drywall(model, costs)
-        rtg_items = calculate_roofing(model, costs)
-        all_items = ins_items + dw_items + rtg_items
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Calculator error: {e}")
-
-    # ── Step 5: Fetch images + classify roof ──────────────────────────
+    # ── Step 3: Fetch images + vision analysis ───────────────────────
+    # Run before model build so vision-corrected story count feeds into
+    # the BuildingModel and all downstream calculators.
     images_b64: dict[str, Optional[str]] = {
         "street_view": None,
         "satellite": None,
@@ -146,9 +133,40 @@ async def estimate_from_address(req: EstimateRequest):
             if roof_classification.get("material"):
                 prop.roof_material = roof_classification["material"]
                 prop.sources["roof_material"] = "claude_vision"
+
+        # Estimate story count from street view (validates/corrects tax data)
+        if image_paths.get("street_view") and keys.get("anthropic_api_key"):
+            try:
+                from _vision_helpers import estimate_stories_from_image
+                vision_stories = estimate_stories_from_image(
+                    image_paths["street_view"],
+                    keys["anthropic_api_key"],
+                )
+                if vision_stories and vision_stories > 0:
+                    if vision_stories != prop.stories:
+                        print(f"    → Vision override: {prop.stories} stories → {vision_stories} stories")
+                        prop.stories = vision_stories
+                        prop.sources["stories"] = "claude_vision"
+            except Exception as e:
+                print(f"    ✗ Story estimation failed: {e}")
     except Exception:
         # Images are optional — don't fail the whole estimate
         pass
+
+    # ── Step 4: Generate BuildingModel ────────────────────────────────
+    try:
+        model, assumptions = build_model(prop, era_config, costs, climate_zone)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model generation failed: {e}")
+
+    # ── Step 5: Run calculators ───────────────────────────────────────
+    try:
+        ins_items = _build_insulation_scope(model, era_config, climate_zone)
+        dw_items = calculate_drywall(model, costs)
+        rtg_items = calculate_roofing(model, costs)
+        all_items = ins_items + dw_items + rtg_items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Calculator error: {e}")
 
     # ── Step 6: Build notes ───────────────────────────────────────────
     era = find_era(prop.year_built or 1975, era_config["eras"])
