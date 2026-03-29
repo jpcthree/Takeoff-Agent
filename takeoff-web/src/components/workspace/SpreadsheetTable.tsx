@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { SpreadsheetToolbar } from './SpreadsheetToolbar';
 import { useProjectStore } from '@/hooks/useProjectStore';
@@ -113,21 +113,13 @@ interface SpreadsheetTableProps {
 
 function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
   const { state, updateLineItem } = useProjectStore();
-  const storeItems = state.lineItems;
+  // Single source of truth: store items. No local copy, no sync race conditions.
+  const items = state.lineItems;
 
-  // Local items state — starts from store, tracks edits locally
-  const [items, setItems] = useState<SpreadsheetLineItem[]>(storeItems);
   const [collapsedTrades, setCollapsedTrades] = useState<Set<string>>(new Set());
   const [editingCell, setEditingCell] = useState<{ id: string; key: string } | null>(null);
   const [editValue, setEditValue] = useState('');
   const [visibleTrades, setVisibleTrades] = useState<Set<string> | null>(null);
-
-  // Sync from store when store items change (e.g. after calculation)
-  React.useEffect(() => {
-    if (storeItems.length > 0) {
-      setItems(storeItems);
-    }
-  }, [storeItems]);
 
   const trades = useMemo(() => {
     const seen = new Set<string>();
@@ -230,9 +222,15 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
       return;
     }
 
-    // Track the adjustment for learning (if project is persisted)
+    // Find the current item from the store (single source of truth)
     const editedItem = items.find((i) => i.id === editingCell.id);
-    if (editedItem && state.projectMeta.id) {
+    if (!editedItem) {
+      setEditingCell(null);
+      return;
+    }
+
+    // Track the adjustment for learning (if project is persisted)
+    if (state.projectMeta.id) {
       const originalValue = editedItem[editingCell.key as keyof SpreadsheetLineItem] as number;
       if (originalValue !== numVal) {
         trackAdjustment({
@@ -247,18 +245,10 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
       }
     }
 
-    let computedChanges: Partial<SpreadsheetLineItem> = {};
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== editingCell.id) return item;
-        const updated = { ...item, [editingCell.key]: numVal };
-        const recomputed = computeItem(updated);
-        computedChanges = recomputed;
-        return recomputed;
-      })
-    );
-    // Send fully recomputed item to store so the useEffect sync doesn't overwrite
-    updateLineItem(editingCell.id, computedChanges);
+    // Recompute and update the store directly — no local state needed
+    const updated = { ...editedItem, [editingCell.key]: numVal };
+    const recomputed = computeItem(updated);
+    updateLineItem(editingCell.id, recomputed);
     setEditingCell(null);
   }, [editingCell, editValue, updateLineItem, items, state.projectMeta.id]);
 

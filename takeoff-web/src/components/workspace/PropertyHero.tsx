@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   MapPin,
   Calendar,
@@ -9,9 +9,7 @@ import {
   BedDouble,
   Bath,
   Home,
-  DollarSign,
-  Building,
-  Landmark,
+  X,
 } from 'lucide-react';
 import type { PropertyInfo } from '@/lib/api/python-service';
 
@@ -41,47 +39,93 @@ function StatPill({
   );
 }
 
-function DetailRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start gap-2.5 py-1.5">
-      <Icon className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
-      <div>
-        <div className="text-[10px] text-gray-400 uppercase tracking-wider leading-none mb-0.5">{label}</div>
-        <div className="text-sm text-gray-800">{value}</div>
-      </div>
-    </div>
-  );
-}
-
 function formatCurrency(value: number): string {
   return `$${value.toLocaleString()}`;
 }
 
+function formatRoof(roofType: string, roofMaterial: string, aiMaterial?: string): string {
+  const parts: string[] = [];
+  const material = roofMaterial && roofMaterial !== 'unknown'
+    ? roofMaterial.replace(/_/g, ' ')
+    : null;
+  const type = roofType && roofType !== 'unknown'
+    ? roofType.replace(/_/g, ' ')
+    : null;
+  if (material) parts.push(material);
+  if (type) parts.push(type);
+  if (aiMaterial && aiMaterial !== material?.replace(/ /g, '_')) {
+    parts.push(`(AI: ${aiMaterial.replace(/_/g, ' ')})`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '';
+}
+
 function PropertyHero({ propertyData, images, roofClassification }: PropertyHeroProps) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState('');
+  const [lightboxAlt, setLightboxAlt] = useState('');
+
   const streetView = images?.street_view || images?.street;
   const satellite = images?.satellite;
-  // Use satellite as hero fallback when street view is missing
   const heroImage = streetView || satellite;
 
-  const hasBasement = propertyData.basement && propertyData.basement !== 'none' && propertyData.basement !== 'unknown';
-  const hasFoundation = propertyData.foundation_type && propertyData.foundation_type !== 'unknown';
-  const hasRoofType = propertyData.roof_type && propertyData.roof_type !== 'unknown';
-  const hasRoofMaterial = propertyData.roof_material && propertyData.roof_material !== 'unknown';
-  const hasSaleDate = propertyData.last_sale_date && propertyData.last_sale_date !== '';
-  const hasSalePrice = propertyData.last_sale_price > 0;
-  const hasEstimatedValue = propertyData.estimated_value > 0;
-  const hasAssessedValue = propertyData.total_value > 0;
+  const openLightbox = (src: string, alt: string) => {
+    setLightboxSrc(src);
+    setLightboxAlt(alt);
+    setLightboxOpen(true);
+  };
 
-  // Check if we have any details to show
-  const hasDetails = hasBasement || hasFoundation || hasRoofType || hasRoofMaterial || hasSaleDate || hasEstimatedValue || hasAssessedValue;
+  // ── Build property detail bullets ──────────────────────────────────
+  const bullets: string[] = [];
+
+  // Foundation / Basement
+  const basement = propertyData.basement;
+  const hasBasement = basement && basement !== 'none' && basement !== 'unknown';
+  const foundation = propertyData.foundation_type;
+  const hasFoundation = foundation && foundation !== 'unknown';
+  if (hasBasement) {
+    const bsmtLabel = basement.replace(/_/g, ' ');
+    const bsmtSqft = propertyData.basement_sqft
+      ? ` (${propertyData.basement_sqft.toLocaleString()} SF)`
+      : '';
+    bullets.push(`Foundation: ${bsmtLabel} basement${bsmtSqft}`);
+  } else if (hasFoundation) {
+    bullets.push(`Foundation: ${foundation.replace(/_/g, ' ')}`);
+  }
+
+  // Roof
+  const roofStr = formatRoof(
+    propertyData.roof_type,
+    propertyData.roof_material,
+    roofClassification?.material,
+  );
+  if (roofStr) {
+    bullets.push(`Roof: ${roofStr}`);
+  }
+
+  // Lot size
+  if (propertyData.lot_sqft && propertyData.lot_sqft > 0) {
+    const acres = propertyData.lot_sqft / 43560;
+    bullets.push(
+      acres >= 0.5
+        ? `Lot: ${acres.toFixed(2)} acres (${propertyData.lot_sqft.toLocaleString()} SF)`
+        : `Lot: ${propertyData.lot_sqft.toLocaleString()} SF`,
+    );
+  }
+
+  // Estimated market value
+  if (propertyData.estimated_value > 0) {
+    bullets.push(`Est. Market Value: ${formatCurrency(propertyData.estimated_value)}`);
+  } else if (propertyData.total_value > 0) {
+    bullets.push(`Assessed Value: ${formatCurrency(propertyData.total_value)}`);
+  }
+
+  // Last sale
+  if (propertyData.last_sale_price > 0 || propertyData.last_sale_date) {
+    const parts: string[] = [];
+    if (propertyData.last_sale_price > 0) parts.push(formatCurrency(propertyData.last_sale_price));
+    if (propertyData.last_sale_date) parts.push(`on ${propertyData.last_sale_date}`);
+    bullets.push(`Last Sale: ${parts.join(' ')}`);
+  }
 
   return (
     <div className="bg-white">
@@ -91,7 +135,8 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
           <img
             src={heroImage}
             alt={streetView ? 'Street view' : 'Satellite view'}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover cursor-pointer"
+            onClick={() => openLightbox(heroImage, streetView ? 'Street view' : 'Satellite view')}
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900 text-white">
@@ -101,14 +146,14 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
           </div>
         )}
 
-        {/* Gradient overlay (only when we have an image) */}
+        {/* Gradient overlay */}
         {heroImage && (
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
         )}
 
         {/* Address overlay */}
         {heroImage && (
-          <div className="absolute bottom-4 left-5 right-5">
+          <div className="absolute bottom-4 left-5 right-5 pointer-events-none">
             <div className="flex items-center gap-2 text-white">
               <MapPin className="h-5 w-5 shrink-0" />
               <h2 className="text-xl font-bold truncate drop-shadow-md">
@@ -118,9 +163,12 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
           </div>
         )}
 
-        {/* Satellite thumbnail (only if street view is the hero) */}
+        {/* Satellite thumbnail (clickable) */}
         {streetView && satellite && (
-          <div className="absolute top-3 right-3 w-24 h-24 rounded-lg overflow-hidden border-2 border-white shadow-lg">
+          <div
+            className="absolute top-3 right-3 w-24 h-24 rounded-lg overflow-hidden border-2 border-white shadow-lg cursor-pointer hover:border-blue-300 transition-colors"
+            onClick={() => openLightbox(satellite, 'Satellite view')}
+          >
             <img
               src={satellite}
               alt="Satellite view"
@@ -145,52 +193,45 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
         </div>
       </div>
 
-      {/* Property Details */}
-      {hasDetails && (
-        <div className="px-5 py-4 border-b border-gray-200">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-1">
-            {hasFoundation && (
-              <DetailRow icon={Building} label="Foundation" value={propertyData.foundation_type} />
-            )}
-            {hasBasement && (
-              <DetailRow
-                icon={Building}
-                label="Basement"
-                value={
-                  propertyData.basement_sqft
-                    ? `${propertyData.basement} (${propertyData.basement_sqft.toLocaleString()} SF)`
-                    : propertyData.basement
-                }
-              />
-            )}
-            {(hasRoofType || hasRoofMaterial) && (
-              <DetailRow
-                icon={Home}
-                label="Roof"
-                value={[
-                  hasRoofType ? propertyData.roof_type : null,
-                  hasRoofMaterial ? propertyData.roof_material : null,
-                  roofClassification?.material ? `(AI: ${roofClassification.material})` : null,
-                ].filter(Boolean).join(' — ')}
-              />
-            )}
-            {hasEstimatedValue && (
-              <DetailRow icon={DollarSign} label="Est. Market Value" value={formatCurrency(propertyData.estimated_value)} />
-            )}
-            {!hasEstimatedValue && hasAssessedValue && (
-              <DetailRow icon={DollarSign} label="Est. Market Value" value={formatCurrency(propertyData.total_value)} />
-            )}
-            {(hasSaleDate || hasSalePrice) && (
-              <DetailRow
-                icon={Landmark}
-                label="Last Sale"
-                value={[
-                  hasSalePrice ? formatCurrency(propertyData.last_sale_price) : null,
-                  hasSaleDate ? propertyData.last_sale_date : null,
-                ].filter(Boolean).join(' on ')}
-              />
-            )}
-          </div>
+      {/* Property Details — clean bullet list */}
+      {bullets.length > 0 && (
+        <div className="px-5 py-3 border-b border-gray-200">
+          <ul className="space-y-1.5">
+            {bullets.map((bullet, idx) => {
+              const [label, ...rest] = bullet.split(': ');
+              const value = rest.join(': ');
+              return (
+                <li key={idx} className="flex text-sm text-gray-700">
+                  <span className="text-gray-400 mr-2">•</span>
+                  <span>
+                    <span className="font-medium text-gray-900">{label}:</span>{' '}
+                    <span className="capitalize">{value}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Image Lightbox */}
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
+            onClick={() => setLightboxOpen(false)}
+          >
+            <X className="h-8 w-8" />
+          </button>
+          <img
+            src={lightboxSrc}
+            alt={lightboxAlt}
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

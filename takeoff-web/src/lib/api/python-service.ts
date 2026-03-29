@@ -45,6 +45,7 @@ export interface PropertyInfo {
   basement: string;
   basement_sqft: number;
   foundation_type: string;
+  lot_sqft: number;
   roof_type: string;
   roof_material: string;
   last_sale_date: string;

@@ -195,6 +195,7 @@ async def estimate_from_address(req: EstimateRequest):
         "basement": prop.basement or "unknown",
         "basement_sqft": prop.basement_sqft or 0,
         "foundation_type": prop.foundation_type or "unknown",
+        "lot_sqft": prop.lot_sqft or 0,
         "roof_type": prop.roof_type or "unknown",
         "roof_material": prop.roof_material or "unknown",
         "total_value": prop.total_value or 0,
