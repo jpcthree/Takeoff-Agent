@@ -74,10 +74,25 @@ async def health():
 async def debug_attom_test():
     """Test ATTOM API directly on production."""
     import traceback
+    import requests as req
     try:
-        from property_lookup import _load_api_keys, _lookup_attom_property
+        from property_lookup import _load_api_keys
         keys = _load_api_keys()
         attom_key = keys.get("attom_api_key", "")
+
+        # Raw API call to bypass any function-level issues
+        headers = {"apikey": attom_key, "Accept": "application/json"}
+        resp = req.get(
+            "https://api.gateway.attomdata.com/propertyapi/v1.0.0/property/expandedprofile",
+            params={"address1": "611 Branding Iron Ln", "address2": "Castle Rock, CO 80104"},
+            headers=headers,
+            timeout=15,
+        )
+        raw_status = resp.status_code
+        raw_body = resp.text[:1000]
+
+        # Also try calling the function
+        from property_lookup import _lookup_attom_property
         result = _lookup_attom_property(
             "611 Branding Iron Ln, Castle Rock, CO 80104",
             attom_key,
@@ -85,7 +100,9 @@ async def debug_attom_test():
         return {
             "attom_key_len": len(attom_key),
             "attom_key_prefix": attom_key[:8] if attom_key else "",
-            "result": result,
+            "raw_api_status": raw_status,
+            "raw_api_body": raw_body,
+            "function_result": result,
         }
     except Exception as e:
         return {
