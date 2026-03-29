@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { SpreadsheetToolbar } from './SpreadsheetToolbar';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useSpreadsheetKeyboard, type RowMeta } from '@/hooks/useSpreadsheetKeyboard';
@@ -115,7 +115,7 @@ interface SpreadsheetTableProps {
 }
 
 function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
-  const { state, updateLineItem, addLineItem } = useProjectStore();
+  const { state, updateLineItem, addLineItem, removeLineItem } = useProjectStore();
   // Single source of truth: store items. No local copy, no sync race conditions.
   const items = state.lineItems;
 
@@ -346,7 +346,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                   <th
                     key={col.key}
                     className={[
-                      'bg-slate-700 text-white px-2 py-2 font-semibold whitespace-nowrap border-r border-slate-600 last:border-r-0',
+                      'bg-slate-700 text-white px-2 py-2 font-semibold whitespace-nowrap border-r border-slate-600',
                       col.width,
                       alignClass(col.align),
                     ].join(' ')}
@@ -354,6 +354,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                     {col.label}
                   </th>
                 ))}
+                <th className="bg-slate-700 w-[30px]" />
               </tr>
             </thead>
 
@@ -375,7 +376,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                         onClick={() => toggleTrade(trade)}
                         className="bg-slate-100 cursor-pointer hover:bg-slate-200 select-none"
                       >
-                        <td colSpan={columns.length} className="px-2 py-2 font-semibold text-gray-800">
+                        <td colSpan={columns.length + 1} className="px-2 py-2 font-semibold text-gray-800">
                           <span className="inline-flex items-center gap-1.5">
                             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             {getTradeLabel(trade)}
@@ -392,7 +393,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                         const currentRowIdx = flatRowIndex;
 
                         return (
-                          <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/80">
+                          <tr key={item.id} className="group border-b border-gray-100 hover:bg-gray-50/80">
                             {columns.map((col, colIdx) => {
                               const isEditing = editingCell?.id === item.id && editingCell?.key === col.key;
                               const isEditable = col.editable;
@@ -453,6 +454,18 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                                 </td>
                               );
                             })}
+                            <td className="w-[30px] px-0 py-1.5 text-center">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeLineItem(item.id);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all cursor-pointer"
+                                title="Delete line item"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -487,6 +500,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                               {totalValues[col.key] || ''}
                             </td>
                           ))}
+                          <td className={`w-[30px] ${padY}`} />
                         </tr>
                       );
                     })()}
@@ -517,6 +531,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                         {gtValues[col.key] || ''}
                       </td>
                     ))}
+                    <td className="w-[30px] py-2" />
                   </tr>
                 );
               })()}
