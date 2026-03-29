@@ -655,7 +655,13 @@ def _lookup_attom_property(address: str, attom_api_key: str) -> dict:
         result["total_sqft"] = _safe_float(size.get("livingSize") or size.get("universalSize"))
         result["bedrooms"] = _safe_int(rooms.get("beds"))
         result["bathrooms"] = _safe_float(rooms.get("bathsTotal") or rooms.get("bathsFull"))
-        result["stories"] = _safe_int(bldg_summary.get("levels"))
+        # ATTOM stores stories in multiple places — check all
+        result["stories"] = (
+            _safe_int(bldg_summary.get("levels"))
+            or _safe_int(size.get("noOfStories"))
+            or _safe_int(summary.get("levels"))
+            or _safe_int(summary.get("stories"))
+        )
 
         # Basement
         bsmt_type = (interior.get("bsmtType") or "").strip().lower()
@@ -1227,9 +1233,20 @@ def lookup_property(address: str) -> PropertyData:
         print("  Querying ATTOM Property API (national)...")
         attom_data = _lookup_attom_property(address, keys["attom_api_key"])
         if attom_data:
+            # Fields where ATTOM should always override defaults
+            # (stories defaults to 1, which is truthy but often wrong)
+            _attom_override_fields = {"stories", "bedrooms", "bathrooms"}
             for field_name in _all_fields:
                 val = attom_data.get(field_name)
-                if val and not getattr(prop, field_name, None):
+                if not val:
+                    continue
+                current = getattr(prop, field_name, None)
+                # Override if: field is empty, OR field has a default/zero value
+                # and ATTOM has real data, OR field is in the override set
+                # and ATTOM source is more authoritative
+                if (not current
+                    or (field_name in _attom_override_fields
+                        and prop.sources.get(field_name) not in ("co_gis",))):
                     setattr(prop, field_name, val)
                     prop.sources[field_name] = "attom"
             # Sale history — ATTOM always wins (most authoritative)
