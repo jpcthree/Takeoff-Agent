@@ -50,6 +50,9 @@ export interface PropertyInfo {
   roof_material: string;
   last_sale_date: string;
   last_sale_price: number;
+  roof_pitch_deg: number;
+  roof_segments_count: number;
+  roof_area_sqft: number;
   total_value: number;
   land_value: number;
   improvement_value: number;

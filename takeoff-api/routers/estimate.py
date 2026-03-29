@@ -204,7 +204,21 @@ async def estimate_from_address(req: EstimateRequest):
         "estimated_value": prop.estimated_value or 0,
         "last_sale_date": prop.last_sale_date or "",
         "last_sale_price": prop.last_sale_price or 0,
+        "roof_pitch_deg": 0.0,
+        "roof_segments_count": len(prop.solar_roof_segments),
+        "roof_area_sqft": round(prop.building_footprint_area_m2 * 10.7639, 0) if prop.building_footprint_area_m2 else 0,
     }
+
+    # Compute predominant roof pitch from solar segments
+    if prop.solar_roof_segments:
+        # Weight pitch by segment area for a meaningful average
+        total_area = sum(s.get("area_m2", 0) for s in prop.solar_roof_segments)
+        if total_area > 0:
+            weighted_pitch = sum(
+                s.get("pitch_deg", 0) * s.get("area_m2", 0)
+                for s in prop.solar_roof_segments
+            ) / total_area
+            property_data["roof_pitch_deg"] = round(weighted_pitch, 1)
 
     # ── Step 8: Serialize and return ──────────────────────────────────
     return EstimateResponse(

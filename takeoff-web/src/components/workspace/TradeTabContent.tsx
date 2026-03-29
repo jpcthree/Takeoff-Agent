@@ -75,8 +75,8 @@ function TradeTabContent({
     // Filter out Property Summary — that data lives in PropertyHero now
     if (titleLower.includes('property summary')) return false;
     // Building Code Requirements only on insulation tab
-    if (titleLower.includes('code') && tradeLower !== 'insulation') return false;
-    // Match notes that mention the trade name
+    if (titleLower.includes('code')) return tradeLower === 'insulation';
+    // Match notes that mention the trade name, or general notes
     return (
       titleLower.includes(tradeLower) ||
       titleLower.includes(getTradeLabel(trade).toLowerCase()) ||
@@ -120,6 +120,16 @@ function TradeTabContent({
     }
     if (roofClassification?.condition) {
       propertyDetails.push({ label: 'Roof Condition', value: cleanLabel(roofClassification.condition) });
+    }
+    if (p.roof_pitch_deg > 0) {
+      const rise = Math.tan((p.roof_pitch_deg * Math.PI) / 180) * 12;
+      propertyDetails.push({ label: 'Roof Pitch', value: `${rise.toFixed(1)}/12 (${p.roof_pitch_deg.toFixed(1)}°)` });
+    }
+    if (p.roof_segments_count > 0) {
+      propertyDetails.push({ label: 'Roof Segments', value: String(p.roof_segments_count) });
+    }
+    if (p.roof_area_sqft > 0) {
+      propertyDetails.push({ label: 'Roof Area', value: `${p.roof_area_sqft.toLocaleString()} SF` });
     }
 
     // Lot

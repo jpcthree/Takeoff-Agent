@@ -102,6 +102,13 @@ function PropertyHero({ propertyData, images, roofClassification }: PropertyHero
     bullets.push(`Roof: ${roofStr}`);
   }
 
+  // Roof pitch
+  if (propertyData.roof_pitch_deg > 0) {
+    // Convert degrees to standard pitch (rise per 12 run)
+    const rise = Math.tan((propertyData.roof_pitch_deg * Math.PI) / 180) * 12;
+    bullets.push(`Roof Pitch: ${rise.toFixed(1)}/12 (${propertyData.roof_pitch_deg.toFixed(1)}°)`);
+  }
+
   // Lot size
   if (propertyData.lot_sqft && propertyData.lot_sqft > 0) {
     const acres = propertyData.lot_sqft / 43560;
