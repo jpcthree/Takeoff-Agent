@@ -56,6 +56,20 @@ async def root():
     return {"service": "Takeoff Agent API", "version": "1.0.0", "status": "ok"}
 
 
+@app.get("/health")
+async def health():
+    """Health check with env var diagnostics."""
+    return {
+        "status": "ok",
+        "version": "1.0.1",
+        "has_google_key": bool(os.environ.get("GOOGLE_API_KEY")),
+        "has_attom_key": bool(os.environ.get("ATTOM_API_KEY")),
+        "has_anthropic_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "has_rapidapi_key": bool(os.environ.get("RAPIDAPI_KEY")),
+        "python_path_entries": len(sys.path),
+    }
+
+
 @app.get("/costs/default")
 async def get_default_costs():
     """Return the default cost database."""
