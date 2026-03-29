@@ -103,11 +103,11 @@ def _load_api_keys() -> dict:
     """Load API keys from env vars first, then config/api_keys.json."""
     keys = {"google_api_key": "", "attom_api_key": "", "anthropic_api_key": "", "rapidapi_key": ""}
 
-    # Env vars take priority
-    keys["google_api_key"] = os.environ.get("GOOGLE_API_KEY", "")
-    keys["attom_api_key"] = os.environ.get("ATTOM_API_KEY", "")
-    keys["anthropic_api_key"] = os.environ.get("ANTHROPIC_API_KEY", "")
-    keys["rapidapi_key"] = os.environ.get("RAPIDAPI_KEY", "")
+    # Env vars take priority — strip whitespace to handle trailing newlines
+    keys["google_api_key"] = os.environ.get("GOOGLE_API_KEY", "").strip()
+    keys["attom_api_key"] = os.environ.get("ATTOM_API_KEY", "").strip()
+    keys["anthropic_api_key"] = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    keys["rapidapi_key"] = os.environ.get("RAPIDAPI_KEY", "").strip()
 
     # Fall back to JSON file
     try:
@@ -115,7 +115,7 @@ def _load_api_keys() -> dict:
             file_keys = json.load(f)
         for k in keys:
             if not keys[k]:
-                keys[k] = file_keys.get(k, "")
+                keys[k] = str(file_keys.get(k, "")).strip()
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
