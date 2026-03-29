@@ -44,6 +44,7 @@ export interface TradeSubtotal {
   amount: number;
   grossProfit: number;
   gpm: number;
+  sheets: number;
 }
 
 export interface GrandTotal {
@@ -53,4 +54,5 @@ export interface GrandTotal {
   amount: number;
   grossProfit: number;
   gpm: number;
+  sheets: number;
 }

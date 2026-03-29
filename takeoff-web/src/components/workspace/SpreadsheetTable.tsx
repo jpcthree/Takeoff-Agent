@@ -161,7 +161,8 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
       const amount = tradeItems.reduce((s, i) => s + i.amount, 0);
       const grossProfit = amount - laborPlusMaterials;
       const gpm = amount > 0 ? grossProfit / amount : 0;
-      map[trade] = { trade, materialTotal, laborTotal, laborPlusMaterials, amount, grossProfit, gpm };
+      const sheets = tradeItems.reduce((s, i) => s + (i.sheets || 0), 0);
+      map[trade] = { trade, materialTotal, laborTotal, laborPlusMaterials, amount, grossProfit, gpm, sheets };
     }
     return map;
   }, [items, trades]);
@@ -173,7 +174,8 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
     const amount = Object.values(tradeSubtotals).reduce((s, t) => s + t.amount, 0);
     const grossProfit = amount - laborPlusMaterials;
     const gpm = amount > 0 ? grossProfit / amount : 0;
-    return { materialTotal, laborTotal, laborPlusMaterials, amount, grossProfit, gpm };
+    const sheets = Object.values(tradeSubtotals).reduce((s, t) => s + t.sheets, 0);
+    return { materialTotal, laborTotal, laborPlusMaterials, amount, grossProfit, gpm, sheets };
   }, [tradeSubtotals]);
 
   const toggleTrade = useCallback((trade: string) => {
@@ -467,6 +469,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                       const padY = isSingleTradeMode ? 'py-2' : 'py-1.5';
                       const totalValues: Record<string, React.ReactNode> = {
                         description: isSingleTradeMode ? 'Total' : `${getTradeLabel(trade)} Subtotal`,
+                        sheets: sub.sheets > 0 ? sub.sheets.toLocaleString() : '',
                         materialTotal: formatCurrency(sub.materialTotal),
                         laborTotal: formatCurrency(sub.laborTotal),
                         laborPlusMaterials: formatCurrency(sub.laborPlusMaterials),
@@ -479,7 +482,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                           {columns.map((col, i) => (
                             <td
                               key={col.key}
-                              className={`px-2 ${padY} ${i < columns.length - 1 ? borderStyle : ''} ${['materialTotal','laborTotal','laborPlusMaterials','amount','grossProfit','gpm'].includes(col.key) ? 'text-right' : ''}`}
+                              className={`px-2 ${padY} ${i < columns.length - 1 ? borderStyle : ''} ${['sheets','materialTotal','laborTotal','laborPlusMaterials','amount','grossProfit','gpm'].includes(col.key) ? 'text-right' : ''}`}
                             >
                               {totalValues[col.key] || ''}
                             </td>
@@ -496,6 +499,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                 flatRowIndex++;
                 const gtValues: Record<string, React.ReactNode> = {
                   description: 'Grand Total',
+                  sheets: grandTotal.sheets > 0 ? grandTotal.sheets.toLocaleString() : '',
                   materialTotal: formatCurrency(grandTotal.materialTotal),
                   laborTotal: formatCurrency(grandTotal.laborTotal),
                   laborPlusMaterials: formatCurrency(grandTotal.laborPlusMaterials),
@@ -508,7 +512,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                     {columns.map((col, i) => (
                       <td
                         key={col.key}
-                        className={`px-2 py-2 ${i < columns.length - 1 ? 'border-r border-slate-700' : ''} ${['materialTotal','laborTotal','laborPlusMaterials','amount','grossProfit','gpm'].includes(col.key) ? 'text-right' : ''}`}
+                        className={`px-2 py-2 ${i < columns.length - 1 ? 'border-r border-slate-700' : ''} ${['sheets','materialTotal','laborTotal','laborPlusMaterials','amount','grossProfit','gpm'].includes(col.key) ? 'text-right' : ''}`}
                       >
                         {gtValues[col.key] || ''}
                       </td>

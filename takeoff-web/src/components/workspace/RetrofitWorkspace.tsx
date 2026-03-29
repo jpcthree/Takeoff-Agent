@@ -84,7 +84,8 @@ function RetrofitWorkspace() {
       const amount = tradeItems.reduce((s, i) => s + i.amount, 0);
       const grossProfit = amount - laborPlusMaterials;
       const gpm = amount > 0 ? grossProfit / amount : 0;
-      map[trade] = { trade, materialTotal, laborTotal, laborPlusMaterials, amount, grossProfit, gpm };
+      const sheets = tradeItems.reduce((s, i) => s + (i.sheets || 0), 0);
+      map[trade] = { trade, materialTotal, laborTotal, laborPlusMaterials, amount, grossProfit, gpm, sheets };
     }
     return map;
   }, [lineItems, trades]);

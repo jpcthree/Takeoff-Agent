@@ -54,7 +54,7 @@ export function calculateRow(
  * Calculate subtotals for each trade from an array of row calculations.
  */
 export function calculateSubtotal(
-  rows: Array<{ trade: string } & RowCalculation>
+  rows: Array<{ trade: string; sheets?: number } & RowCalculation>
 ): TradeSubtotal[] {
   const byTrade = new Map<string, TradeSubtotal>();
 
@@ -66,6 +66,7 @@ export function calculateSubtotal(
       existing.laborPlusMaterials += row.laborPlusMaterials;
       existing.amount += row.amount;
       existing.grossProfit += row.grossProfit;
+      existing.sheets += (row.sheets || 0);
     } else {
       byTrade.set(row.trade, {
         trade: row.trade,
@@ -75,6 +76,7 @@ export function calculateSubtotal(
         amount: row.amount,
         grossProfit: row.grossProfit,
         gpm: 0,
+        sheets: row.sheets || 0,
       });
     }
   }
@@ -100,6 +102,7 @@ export function calculateGrandTotal(subtotals: TradeSubtotal[]): GrandTotal {
     amount: 0,
     grossProfit: 0,
     gpm: 0,
+    sheets: 0,
   };
 
   for (const sub of subtotals) {
@@ -108,6 +111,7 @@ export function calculateGrandTotal(subtotals: TradeSubtotal[]): GrandTotal {
     total.laborPlusMaterials += sub.laborPlusMaterials;
     total.amount += sub.amount;
     total.grossProfit += sub.grossProfit;
+    total.sheets += sub.sheets;
   }
 
   total.gpm = total.amount > 0 ? total.grossProfit / total.amount : 0;
