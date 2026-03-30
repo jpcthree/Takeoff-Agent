@@ -11,7 +11,7 @@
 // Shared BuildingModel schema (used across all prompts)
 // ---------------------------------------------------------------------------
 
-const BUILDING_MODEL_SCHEMA = `
+export const BUILDING_MODEL_SCHEMA = `
 ## BuildingModel JSON Schema
 
 Use the Dimension format for all measurements: { "feet": <int>, "inches": <float> }
@@ -214,7 +214,7 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
 }
 \`\`\``;
 
-const ANALYSIS_RULES = `
+export const ANALYSIS_RULES = `
 ## Important Rules
 
 1. **Measure everything you can see.** Use dimensions shown on the plans. When not explicit, estimate from scale or known references (door = 3'0", standard toilet = 14" rough-in, etc.)

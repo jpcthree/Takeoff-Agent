@@ -188,3 +188,13 @@ export async function extractPdfText(file: File): Promise<{
 
   return { pages, totalPages: pdf.numPages, pagesWithText, pagesWithoutText };
 }
+
+/**
+ * Get a compact text excerpt from a page, suitable for classification prompts.
+ * Returns the first `maxChars` characters of raw text, trimmed.
+ */
+export function getTextExcerpt(page: ExtractedPageText, maxChars: number = 200): string {
+  const text = page.rawText.trim();
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + '…';
+}

@@ -161,3 +161,39 @@ export async function createVisionPage(
     filename: `${file.name}_page_${pageNumber}.jpg`,
   };
 }
+
+/**
+ * Create high-resolution JPEG images for specific pages only.
+ * Opens the PDF once and renders only the requested page numbers.
+ * Used for deep analysis of classified-as-relevant pages.
+ *
+ * Default: 200 DPI — 2x the old 100 DPI, making dimension text legible
+ * on large architectural sheets (24×36, 30×42).
+ */
+export async function createHighResPages(
+  file: File,
+  pageNumbers: number[],
+  dpi: number = 200,
+  quality: number = 0.80
+): Promise<PdfPage[]> {
+  const pdfjs = await getPdfLib();
+  const arrayBuffer = await file.arrayBuffer();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdf = await (pdfjs as any).getDocument({ data: arrayBuffer }).promise;
+  const scale = dpi / 72;
+
+  const pages: PdfPage[] = [];
+
+  for (const pageNum of pageNumbers) {
+    if (pageNum < 1 || pageNum > pdf.numPages) continue;
+    const { data, mime_type } = await renderPage(pdf, pageNum, scale, 'image/jpeg', quality);
+    pages.push({
+      page_number: pageNum,
+      data,
+      mime_type,
+      filename: `${file.name}_page_${pageNum}_hires.jpg`,
+    });
+  }
+
+  return pages;
+}
