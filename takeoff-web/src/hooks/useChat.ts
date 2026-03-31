@@ -2,11 +2,23 @@
 
 import { useState, useCallback, useRef } from 'react';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  /** Tool calls made by the assistant (populated after stream completes) */
+  toolCalls?: ToolCall[];
 }
 
 interface ProjectContext {
@@ -39,8 +51,8 @@ interface ProjectContext {
 }
 
 interface UseChatOptions {
-  /** Called with the final assistant message text when a stream completes. */
-  onStreamComplete?: (messageText: string) => void;
+  /** Called when a stream completes with text and any tool calls. */
+  onStreamComplete?: (messageText: string, toolCalls: ToolCall[]) => void;
 }
 
 interface UseChatReturn {
@@ -50,6 +62,10 @@ interface UseChatReturn {
   clearMessages: () => void;
 }
 
+// ---------------------------------------------------------------------------
+// Welcome message
+// ---------------------------------------------------------------------------
+
 const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
@@ -57,6 +73,10 @@ const WELCOME_MESSAGE: ChatMessage = {
     "Hello! I'm your takeoff assistant. I can help you understand your construction estimate, adjust costs, or answer questions about materials and labor. How can I help?",
   timestamp: new Date().toISOString(),
 };
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useChat(context: ProjectContext = {}, options: UseChatOptions = {}): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
@@ -120,6 +140,9 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
         let buffer = '';
         let fullText = '';
 
+        // Tool use accumulation
+        const pendingToolCalls = new Map<string, { name: string; jsonChunks: string[] }>();
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -139,6 +162,7 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
               const event = JSON.parse(jsonStr);
 
               if (event.type === 'text') {
+                // Streamed text content
                 fullText += event.text;
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -148,6 +172,7 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
                   )
                 );
               } else if (event.type === 'content_block_delta' && event.delta?.text) {
+                // Legacy format (mock responses)
                 fullText += event.delta.text;
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -156,8 +181,19 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
                       : m
                   )
                 );
+              } else if (event.type === 'tool_use_start') {
+                // Tool call begins — start accumulating input JSON
+                pendingToolCalls.set(event.id, { name: event.name, jsonChunks: [] });
+              } else if (event.type === 'tool_use_delta') {
+                // Streamed tool input JSON chunk
+                const pending = pendingToolCalls.get(event.id);
+                if (pending) {
+                  pending.jsonChunks.push(event.partial_json);
+                }
+              } else if (event.type === 'tool_use_end') {
+                // Tool call complete — nothing else to do here, we'll parse at the end
               } else if (event.type === 'done' || event.type === 'message_stop') {
-                // Stream complete — fire callback for action parsing
+                // Stream complete
               } else if (event.type === 'error') {
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -173,9 +209,33 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
           }
         }
 
-        // Stream finished — notify caller so actions can be parsed & executed
-        if (fullText && onStreamCompleteRef.current) {
-          onStreamCompleteRef.current(fullText);
+        // Parse completed tool calls
+        const completedToolCalls: ToolCall[] = [];
+        for (const [id, tc] of pendingToolCalls) {
+          try {
+            const inputJson = tc.jsonChunks.join('');
+            const input = inputJson ? JSON.parse(inputJson) : {};
+            completedToolCalls.push({ id, name: tc.name, input });
+          } catch {
+            // Skip malformed tool call JSON
+            console.warn(`Failed to parse tool call ${id} (${tc.name}):`, tc.jsonChunks.join(''));
+          }
+        }
+
+        // Attach tool calls to the assistant message
+        if (completedToolCalls.length > 0) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, toolCalls: completedToolCalls }
+                : m
+            )
+          );
+        }
+
+        // Stream finished — notify caller with text + tool calls
+        if (onStreamCompleteRef.current) {
+          onStreamCompleteRef.current(fullText, completedToolCalls);
         }
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;

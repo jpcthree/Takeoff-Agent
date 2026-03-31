@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
+import { CHAT_TOOLS } from '@/lib/chat/tool-definitions';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -121,29 +122,25 @@ function buildSystemPrompt(context: ChatContext): string {
     `- Suggest adjustments when the user provides information not on the plans`,
     `- Explain trade-specific concepts (waste factors, labor rates, material choices)`,
     `- Help users understand the relationship between building model data and line items`,
-    `- Directly modify individual line item values (quantity, unit cost, labor rate, unit price)`,
+    `- Directly modify the estimate: update quantities, costs, descriptions; add or remove items; change building model fields and recalculate trades`,
     ``,
-    `When the user asks you to make changes to the estimate, respond with your analysis and include a JSON action block that the frontend will execute. Format actions as:`,
-    `\`\`\`action`,
-    `{"type": "recalculate_trade", "trade": "insulation", "reason": "User requested R-60 spray foam"}`,
-    `\`\`\``,
+    `## Making Changes`,
+    `When the user asks you to change the estimate, use your available tools. Briefly explain what you plan to change, then call the appropriate tool. After the tool executes, confirm what changed.`,
     ``,
-    `Available action types:`,
-    `- recalculate_trade: Re-run a specific trade calculator (trades: insulation, drywall, roofing, gutters)`,
-    `- update_building_model: Modify a field on the building model, e.g. {"type": "update_building_model", "changes": {"roof_insulation_r_value": 60}}`,
-    `- update_line_item: Modify a specific line item field. Use the item's ID. Fields: "quantity", "unitCost", "laborRatePct", "unitPrice". Example: {"type": "update_line_item", "item_id": "item-3-1234", "field": "quantity", "value": 25}`,
-    `- add_line_item: Add a manual line item`,
-    `- remove_line_item: Remove a line item by description`,
+    `- Use **update_line_items** for changing quantities, costs, descriptions, categories, or units on existing items. Prefer this for simple edits.`,
+    `- Use **add_line_items** to add new materials, labor, or scope not currently in the estimate.`,
+    `- Use **remove_line_items** to delete items (use item IDs, not descriptions).`,
+    `- Use **update_building_model** when the user provides new building information (dimensions, insulation specs, roof details, etc.). Include affected trades in recalculate_trades to regenerate their line items.`,
+    `- Use **recalculate_trade** to refresh a trade's quantities from the current building model without changing it.`,
     ``,
-    `Insulation covers many assembly types. Modifiable fields include: walls[].insulation_type/r_value/continuous_insulation_type/continuous_insulation_r_value, attic_insulation_type/r_value, attic_baffles/attic_baffle_count, attic_hatch_insulation, roof_insulation_type/r_value (cathedral), slab_edge_insulation/r_value/type/depth/perimeter, under_slab_insulation/r_value/area, basement_wall_insulation/type/r_value/location/area, rim_joist_insulation/type/r_value/perimeter, knee_wall_insulation/type/r_value/area, floor_over_unconditioned/type/r_value/area/support, garage_ceiling_insulation/type/r_value/area, garage_wall_insulation/type/r_value/area, crawlspace_wall_insulation/type/r_value, air_sealing, vapor_barrier, house_wrap. After updating fields, always recalculate_trade insulation.`,
+    `## Building Model Fields`,
+    `Insulation: walls[].insulation_type/r_value/continuous_insulation_type/continuous_insulation_r_value, attic_insulation_type/r_value, roof_insulation_type/r_value (cathedral), slab_edge_insulation/r_value/type/depth/perimeter, basement_wall_insulation/type/r_value/location/area, rim_joist_insulation/type/r_value/perimeter, crawlspace_wall_insulation/type/r_value, air_sealing, vapor_barrier, house_wrap.`,
+    `Roofing: roof.sections[].underlayment_type/shingle_type, chimney_count, skylight_count, pipe_boot_count, roof_complexity.`,
+    `Drywall: walls[].drywall_type/drywall_layers/drywall_finish_level (L0-L5), rooms[].ceiling_drywall_type/ceiling_drywall_layers/ceiling_finish_level.`,
     ``,
-    `Roofing modifiable fields: roof.sections[].underlayment_type/shingle_type, chimney_count, skylight_count, pipe_boot_count, soffit_vent_count, power_vent_count, step_flashing_lf, counter_flashing_lf, roof_complexity (simple/standard/complex/very_complex). Gutter fields: gutter_runs[].gutter_guard/gutter_guard_type/end_caps. After updating, recalculate_trade roofing.`,
+    `Available trades for recalculation: insulation, drywall, roofing, gutters.`,
     ``,
-    `Drywall modifiable fields: walls[].drywall_type/drywall_layers/drywall_finish_level (GA-214 L0-L5), rooms[].ceiling_drywall_type/ceiling_drywall_layers/ceiling_finish_level, access_panel_count, l_bead_lf. Finish levels: L0=none, L1=fire-tape, L2=tile substrate, L3=textured, L4=standard smooth, L5=skim coat. After updating, recalculate_trade drywall.`,
-    ``,
-    `When using update_line_item, prefer it over recalculate_trade for simple quantity/cost changes. Use recalculate_trade when structural building model changes affect many items at once.`,
-    ``,
-    `Be concise but thorough. Use bullet points for clarity. When discussing costs, always note that Unit Cost and Unit Price columns are user-input fields.`,
+    `Be concise but thorough. Use bullet points for clarity. When discussing costs, note that Unit Cost and Unit Price columns are user-input fields.`,
   ];
 
   // Project identity
@@ -283,46 +280,57 @@ export async function POST(req: Request) {
       systemPrompt += '\n' + learningContext;
     }
 
-    // Stream the response
+    // Stream the response with tool_use enabled
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       system: systemPrompt,
+      tools: CHAT_TOOLS,
       messages: messages.map((m) => ({
         role: m.role,
         content: m.content,
       })),
     });
 
-    // Convert the Anthropic stream to an SSE ReadableStream
+    // Convert the Anthropic stream to an SSE ReadableStream.
+    // Handles both text and tool_use content blocks.
     const encoder = new TextEncoder();
+    let currentToolUseId: string | null = null;
+
     const readableStream = new ReadableStream({
       async start(controller) {
+        const send = (data: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        };
+
         try {
           for await (const event of stream) {
-            if (event.type === 'content_block_delta') {
+            if (event.type === 'content_block_start') {
+              const block = event.content_block;
+              if (block.type === 'tool_use') {
+                currentToolUseId = block.id;
+                send({ type: 'tool_use_start', id: block.id, name: block.name });
+              }
+            } else if (event.type === 'content_block_delta') {
               const delta = event.delta;
               if ('text' in delta) {
-                controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify({ type: 'text', text: delta.text })}\n\n`
-                  )
-                );
+                // Text content block delta
+                send({ type: 'text', text: delta.text });
+              } else if ('partial_json' in delta && currentToolUseId) {
+                // Tool use input JSON delta
+                send({ type: 'tool_use_delta', id: currentToolUseId, partial_json: delta.partial_json });
+              }
+            } else if (event.type === 'content_block_stop') {
+              if (currentToolUseId) {
+                send({ type: 'tool_use_end', id: currentToolUseId });
+                currentToolUseId = null;
               }
             } else if (event.type === 'message_stop') {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: 'done' })}\n\n`
-                )
-              );
+              send({ type: 'done' });
             }
           }
         } catch (error) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: 'error', error: String(error) })}\n\n`
-            )
-          );
+          send({ type: 'error', error: String(error) });
         } finally {
           controller.close();
         }
