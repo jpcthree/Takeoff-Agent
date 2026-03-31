@@ -1,11 +1,19 @@
 'use client';
 
 import React from 'react';
+import { Wrench } from 'lucide-react';
+
+interface ToolCallInfo {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  toolCalls?: ToolCallInfo[];
   isStreaming?: boolean;
 }
 
@@ -18,7 +26,15 @@ function formatTime(dateStr: string): string {
   });
 }
 
-function ChatMessage({ role, content, timestamp, isStreaming = false }: ChatMessageProps) {
+const TOOL_LABELS: Record<string, string> = {
+  update_line_items: 'Updated items',
+  add_line_items: 'Added items',
+  remove_line_items: 'Removed items',
+  update_building_model: 'Updated model',
+  recalculate_trade: 'Recalculated trade',
+};
+
+function ChatMessage({ role, content, timestamp, toolCalls, isStreaming = false }: ChatMessageProps) {
   const isUser = role === 'user';
 
   return (
@@ -48,6 +64,19 @@ function ChatMessage({ role, content, timestamp, isStreaming = false }: ChatMess
           <span className="inline-block w-0.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-text-bottom" />
         )}
       </div>
+      {!isStreaming && toolCalls && toolCalls.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1 px-1">
+          {toolCalls.map((tc) => (
+            <span
+              key={tc.id}
+              className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] text-blue-600"
+            >
+              <Wrench className="h-2.5 w-2.5" />
+              {TOOL_LABELS[tc.name] || tc.name}
+            </span>
+          ))}
+        </div>
+      )}
       {!isStreaming && (
         <span className="mt-1 text-[10px] text-gray-400 px-1">
           {formatTime(timestamp)}

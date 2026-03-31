@@ -6,7 +6,8 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { useChat } from '@/hooks/useChat';
 import { useProjectStore } from '@/hooks/useProjectStore';
-import { parseActions, executeAction } from '@/lib/actions/chat-actions';
+import { executeToolCall } from '@/lib/actions/chat-actions';
+import type { ToolCall } from '@/hooks/useChat';
 
 function ChatPanel() {
   const { state, updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem, updateLineItem } =
@@ -53,23 +54,24 @@ function ChatPanel() {
     }));
   }, [lineItems]);
 
-  // Handle action blocks when the assistant finishes streaming
+  // Execute tool calls when the assistant finishes streaming
   const handleStreamComplete = useCallback(
-    async (text: string) => {
-      const actions = parseActions(text);
-      if (actions.length === 0) return;
+    async (_text: string, toolCalls: ToolCall[]) => {
+      if (toolCalls.length === 0) return;
 
-      for (const action of actions) {
-        await executeAction(action, {
-          updateBuildingModel,
-          replaceTradeItems,
-          addLineItem,
-          removeLineItem,
-          updateLineItem,
-          getBuildingModel: () => buildingModel,
-          getCosts: () => costs,
-          getLineItems: () => lineItems,
-        });
+      const store = {
+        updateBuildingModel,
+        replaceTradeItems,
+        addLineItem,
+        removeLineItem,
+        updateLineItem,
+        getBuildingModel: () => buildingModel,
+        getCosts: () => costs,
+        getLineItems: () => lineItems,
+      };
+
+      for (const toolCall of toolCalls) {
+        await executeToolCall(toolCall, store);
       }
     },
     [updateBuildingModel, replaceTradeItems, addLineItem, removeLineItem, updateLineItem, buildingModel, costs, lineItems]
@@ -152,6 +154,7 @@ function ChatPanel() {
             role={msg.role}
             content={msg.content}
             timestamp={msg.timestamp}
+            toolCalls={msg.toolCalls}
             isStreaming={isStreaming && msg.id === messages[messages.length - 1]?.id && msg.role === 'assistant'}
           />
         ))}

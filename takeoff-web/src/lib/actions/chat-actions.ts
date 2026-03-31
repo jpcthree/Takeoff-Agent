@@ -1,60 +1,20 @@
 /**
  * Chat action parser and executor.
- * When Claude's response contains ```action blocks, this module
- * parses them and dispatches the appropriate store actions.
+ *
+ * Supports two modes:
+ * 1. Native tool_use (new): Claude calls structured tools via Anthropic API
+ * 2. Legacy action blocks (deprecated): ```action JSON``` in response text
  */
 
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 import type { LineItemDict } from '@/lib/api/python-service';
+import type { ToolCall } from '@/hooks/useChat';
 import { calculateTrade } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet, calculateRow } from '@/lib/utils/calculations';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface RecalculateTradeAction {
-  type: 'recalculate_trade';
-  trade: string;
-  reason?: string;
-}
-
-interface UpdateBuildingModelAction {
-  type: 'update_building_model';
-  changes: Record<string, unknown>;
-  reason?: string;
-}
-
-interface AddLineItemAction {
-  type: 'add_line_item';
-  item: {
-    trade: string;
-    category: string;
-    description: string;
-    quantity: number;
-    unit: string;
-    material_unit_cost?: number;
-  };
-}
-
-interface RemoveLineItemAction {
-  type: 'remove_line_item';
-  description: string;
-}
-
-interface UpdateLineItemAction {
-  type: 'update_line_item';
-  item_id: string;
-  field: 'quantity' | 'unitCost' | 'laborRatePct' | 'unitPrice';
-  value: number;
-}
-
-type ChatAction =
-  | RecalculateTradeAction
-  | UpdateBuildingModelAction
-  | AddLineItemAction
-  | RemoveLineItemAction
-  | UpdateLineItemAction;
 
 export interface ActionResult {
   success: boolean;
@@ -63,38 +23,7 @@ export interface ActionResult {
   updatedRawItems?: LineItemDict[];
 }
 
-// ---------------------------------------------------------------------------
-// Parser
-// ---------------------------------------------------------------------------
-
-/**
- * Extract action blocks from Claude's response text.
- * Looks for ```action ... ``` code blocks containing JSON.
- */
-export function parseActions(responseText: string): ChatAction[] {
-  const actions: ChatAction[] = [];
-  const regex = /```action\s*\n?([\s\S]*?)\n?```/g;
-  let match;
-
-  while ((match = regex.exec(responseText)) !== null) {
-    try {
-      const action = JSON.parse(match[1]) as ChatAction;
-      if (action.type) {
-        actions.push(action);
-      }
-    } catch {
-      // Skip malformed action blocks
-    }
-  }
-
-  return actions;
-}
-
-// ---------------------------------------------------------------------------
-// Executor
-// ---------------------------------------------------------------------------
-
-interface StoreCallbacks {
+export interface StoreCallbacks {
   updateBuildingModel: (changes: Record<string, unknown>) => void;
   replaceTradeItems: (trade: string, items: SpreadsheetLineItem[], raw: LineItemDict[]) => void;
   addLineItem: (item: SpreadsheetLineItem, raw?: LineItemDict) => void;
@@ -105,132 +34,269 @@ interface StoreCallbacks {
   getLineItems: () => SpreadsheetLineItem[];
 }
 
+// ---------------------------------------------------------------------------
+// Native tool_use executor (new)
+// ---------------------------------------------------------------------------
+
 /**
- * Execute a parsed action against the store.
+ * Execute a tool call from Claude's native tool_use response.
  */
-export async function executeAction(
-  action: ChatAction,
+export async function executeToolCall(
+  toolCall: ToolCall,
   store: StoreCallbacks
 ): Promise<ActionResult> {
-  switch (action.type) {
-    case 'recalculate_trade': {
-      const model = store.getBuildingModel();
-      if (!model) {
-        return { success: false, message: 'No building model available' };
-      }
-
-      try {
-        const result = await calculateTrade(
-          action.trade,
-          model,
-          store.getCosts() || undefined
-        );
-        const items = result.items.map((item, i) =>
-          pythonLineItemToSpreadsheet(item, i)
-        );
-        store.replaceTradeItems(action.trade, items, result.items);
-        return {
-          success: true,
-          message: `Recalculated ${action.trade}: ${result.count} items`,
-          updatedItems: items,
-          updatedRawItems: result.items,
-        };
-      } catch (err) {
-        return {
-          success: false,
-          message: `Failed to recalculate ${action.trade}: ${err instanceof Error ? err.message : String(err)}`,
-        };
-      }
+  try {
+    switch (toolCall.name) {
+      case 'update_line_items':
+        return executeUpdateLineItems(toolCall.input as unknown as UpdateLineItemsInput, store);
+      case 'add_line_items':
+        return executeAddLineItems(toolCall.input as unknown as AddLineItemsInput, store);
+      case 'remove_line_items':
+        return executeRemoveLineItems(toolCall.input as unknown as RemoveLineItemsInput, store);
+      case 'update_building_model':
+        return await executeUpdateBuildingModel(toolCall.input as unknown as UpdateBuildingModelInput, store);
+      case 'recalculate_trade':
+        return await executeRecalculateTrade(toolCall.input as unknown as RecalculateTradeInput, store);
+      default:
+        return { success: false, message: `Unknown tool: ${toolCall.name}` };
     }
-
-    case 'update_building_model': {
-      store.updateBuildingModel(action.changes);
-      return {
-        success: true,
-        message: `Updated building model: ${Object.keys(action.changes).join(', ')}`,
-      };
-    }
-
-    case 'add_line_item': {
-      const newItem: SpreadsheetLineItem = {
-        id: `manual-${Date.now()}`,
-        trade: action.item.trade,
-        category: action.item.category,
-        description: action.item.description,
-        quantity: action.item.quantity,
-        unit: action.item.unit,
-        unitCost: action.item.material_unit_cost || 0,
-        laborRatePct: 0,
-        unitPrice: 0,
-        materialTotal: (action.item.quantity || 0) * (action.item.material_unit_cost || 0),
-        materialPct: 0,
-        laborTotal: 0,
-        laborPct: 0,
-        laborPlusMaterials: (action.item.quantity || 0) * (action.item.material_unit_cost || 0),
-        amount: 0,
-        grossProfit: 0,
-        gpm: 0,
-        sortOrder: store.getLineItems().length,
-        isUserAdded: true,
-      };
-      store.addLineItem(newItem);
-      return {
-        success: true,
-        message: `Added line item: ${action.item.description}`,
-      };
-    }
-
-    case 'remove_line_item': {
-      const items = store.getLineItems();
-      const match = items.find(
-        (i) => i.description.toLowerCase() === action.description.toLowerCase()
-      );
-      if (match) {
-        store.removeLineItem(match.id);
-        return {
-          success: true,
-          message: `Removed line item: ${action.description}`,
-        };
-      }
-      return {
-        success: false,
-        message: `Line item not found: ${action.description}`,
-      };
-    }
-
-    case 'update_line_item': {
-      const allItems = store.getLineItems();
-      const target = allItems.find((i) => i.id === action.item_id);
-      if (!target) {
-        return {
-          success: false,
-          message: `Line item not found with ID: ${action.item_id}`,
-        };
-      }
-
-      // Apply the field change
-      const updated = { ...target, [action.field]: action.value };
-
-      // Recalculate derived fields
-      const calc = calculateRow(
-        updated.quantity,
-        updated.unitCost,
-        updated.laborRatePct,
-        updated.unitPrice
-      );
-
-      store.updateLineItem(action.item_id, {
-        [action.field]: action.value,
-        ...calc,
-      });
-
-      return {
-        success: true,
-        message: `Updated ${target.description}: ${action.field} → ${action.value}`,
-      };
-    }
-
-    default:
-      return { success: false, message: `Unknown action type` };
+  } catch (err) {
+    return {
+      success: false,
+      message: `Tool execution failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Tool input types
+// ---------------------------------------------------------------------------
+
+interface UpdateLineItemsInput {
+  updates: Array<{
+    item_id: string;
+    field: string;
+    value: number | string;
+  }>;
+}
+
+interface AddLineItemsInput {
+  items: Array<{
+    trade: string;
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    unitCost?: number;
+  }>;
+}
+
+interface RemoveLineItemsInput {
+  item_ids: string[];
+  reason?: string;
+}
+
+interface UpdateBuildingModelInput {
+  changes: Record<string, unknown>;
+  recalculate_trades?: string[];
+  reason?: string;
+}
+
+interface RecalculateTradeInput {
+  trade: string;
+  reason?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Executors
+// ---------------------------------------------------------------------------
+
+function executeUpdateLineItems(
+  input: UpdateLineItemsInput,
+  store: StoreCallbacks
+): ActionResult {
+  const allItems = store.getLineItems();
+  const results: string[] = [];
+  let updated = 0;
+
+  for (const update of input.updates) {
+    const target = allItems.find((i) => i.id === update.item_id);
+    if (!target) {
+      results.push(`Item ${update.item_id} not found`);
+      continue;
+    }
+
+    const numericFields = ['quantity', 'unitCost', 'laborRatePct', 'unitPrice'];
+
+    if (numericFields.includes(update.field)) {
+      // Numeric field — apply change and recalculate derived fields
+      const updatedItem = { ...target, [update.field]: Number(update.value) };
+      const calc = calculateRow(
+        updatedItem.quantity,
+        updatedItem.unitCost,
+        updatedItem.laborRatePct,
+        updatedItem.unitPrice
+      );
+      store.updateLineItem(update.item_id, {
+        [update.field]: Number(update.value),
+        ...calc,
+      });
+    } else {
+      // Text field — direct update
+      store.updateLineItem(update.item_id, {
+        [update.field]: String(update.value),
+      });
+    }
+
+    results.push(`${target.description}: ${update.field} → ${update.value}`);
+    updated++;
+  }
+
+  return {
+    success: updated > 0,
+    message: updated > 0
+      ? `Updated ${updated} item${updated !== 1 ? 's' : ''}: ${results.join('; ')}`
+      : `No items updated: ${results.join('; ')}`,
+  };
+}
+
+function executeAddLineItems(
+  input: AddLineItemsInput,
+  store: StoreCallbacks
+): ActionResult {
+  const currentItems = store.getLineItems();
+  const added: string[] = [];
+
+  for (const item of input.items) {
+    const unitCost = item.unitCost || 0;
+    const materialTotal = (item.quantity || 0) * unitCost;
+
+    const newItem: SpreadsheetLineItem = {
+      id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      trade: item.trade,
+      category: item.category,
+      description: item.description,
+      quantity: item.quantity,
+      unit: item.unit,
+      unitCost,
+      laborRatePct: 0,
+      unitPrice: 0,
+      materialTotal,
+      materialPct: 0,
+      laborTotal: 0,
+      laborPct: 0,
+      laborPlusMaterials: materialTotal,
+      amount: 0,
+      grossProfit: 0,
+      gpm: 0,
+      sortOrder: currentItems.length + added.length,
+      isUserAdded: true,
+    };
+
+    store.addLineItem(newItem);
+    added.push(item.description);
+  }
+
+  return {
+    success: added.length > 0,
+    message: `Added ${added.length} item${added.length !== 1 ? 's' : ''}: ${added.join(', ')}`,
+  };
+}
+
+function executeRemoveLineItems(
+  input: RemoveLineItemsInput,
+  store: StoreCallbacks
+): ActionResult {
+  const allItems = store.getLineItems();
+  const removed: string[] = [];
+  const notFound: string[] = [];
+
+  for (const id of input.item_ids) {
+    const item = allItems.find((i) => i.id === id);
+    if (item) {
+      store.removeLineItem(id);
+      removed.push(item.description);
+    } else {
+      notFound.push(id);
+    }
+  }
+
+  const parts: string[] = [];
+  if (removed.length > 0) parts.push(`Removed ${removed.length}: ${removed.join(', ')}`);
+  if (notFound.length > 0) parts.push(`Not found: ${notFound.join(', ')}`);
+
+  return {
+    success: removed.length > 0,
+    message: parts.join('. '),
+  };
+}
+
+async function executeUpdateBuildingModel(
+  input: UpdateBuildingModelInput,
+  store: StoreCallbacks
+): Promise<ActionResult> {
+  // Apply model changes
+  store.updateBuildingModel(input.changes);
+  const changedFields = Object.keys(input.changes).join(', ');
+
+  // Optionally recalculate affected trades
+  const recalcResults: string[] = [];
+  if (input.recalculate_trades && input.recalculate_trades.length > 0) {
+    const model = store.getBuildingModel();
+    if (!model) {
+      return {
+        success: true,
+        message: `Updated building model (${changedFields}) but could not recalculate — no model available`,
+      };
+    }
+
+    for (const trade of input.recalculate_trades) {
+      try {
+        const result = await calculateTrade(trade, model, store.getCosts() || undefined);
+        const items = result.items.map((item, i) => pythonLineItemToSpreadsheet(item, i));
+        store.replaceTradeItems(trade, items, result.items);
+        recalcResults.push(`${trade}: ${result.count} items`);
+      } catch (err) {
+        recalcResults.push(`${trade}: failed (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
+  }
+
+  const message = recalcResults.length > 0
+    ? `Updated model (${changedFields}) and recalculated: ${recalcResults.join(', ')}`
+    : `Updated building model: ${changedFields}`;
+
+  return { success: true, message };
+}
+
+async function executeRecalculateTrade(
+  input: RecalculateTradeInput,
+  store: StoreCallbacks
+): Promise<ActionResult> {
+  const model = store.getBuildingModel();
+  if (!model) {
+    return { success: false, message: 'No building model available' };
+  }
+
+  try {
+    const result = await calculateTrade(
+      input.trade,
+      model,
+      store.getCosts() || undefined
+    );
+    const items = result.items.map((item, i) => pythonLineItemToSpreadsheet(item, i));
+    store.replaceTradeItems(input.trade, items, result.items);
+    return {
+      success: true,
+      message: `Recalculated ${input.trade}: ${result.count} items`,
+      updatedItems: items,
+      updatedRawItems: result.items,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: `Failed to recalculate ${input.trade}: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
