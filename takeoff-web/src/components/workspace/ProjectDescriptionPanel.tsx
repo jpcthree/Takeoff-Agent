@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Building2, Layers, Home, Ruler, Mountain, SquareStack } from 'lucide-react';
+import { Building2, Layers, Home, Ruler, Mountain, SquareStack, Users } from 'lucide-react';
 import { useProjectStore } from '@/hooks/useProjectStore';
 
 // ---------------------------------------------------------------------------
@@ -142,6 +142,17 @@ function ProjectDescriptionPanel() {
   const foundationArea = get(bm, 'foundation.area_sf', 0);
   const foundationPerimeter = get(bm, 'foundation.perimeter_lf', 0);
 
+  // Project Team
+  const projectTeam = get<unknown[]>(bm, 'project_team', []);
+  type TeamMember = {
+    role: string;
+    name: string;
+    company?: string;
+    license?: string;
+    phone?: string;
+    email?: string;
+  };
+
   // Openings
   const openings = get<unknown[]>(bm, 'openings', []);
   const windows = openings.filter((o: unknown) => {
@@ -184,6 +195,31 @@ function ProjectDescriptionPanel() {
           )}
         </div>
       </div>
+
+      {/* Project Team */}
+      {projectTeam.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="text-primary"><Users className="h-4 w-4" /></div>
+            <h3 className="text-sm font-semibold text-gray-800">Project Team</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {projectTeam.map((member: unknown, idx: number) => {
+              const m = member as TeamMember;
+              return (
+                <div key={idx} className="flex flex-col gap-0.5 bg-gray-50 rounded-lg p-3">
+                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">{m.role}</span>
+                  <span className="text-sm font-medium text-gray-900">{m.name}</span>
+                  {m.company && <span className="text-xs text-gray-500">{m.company}</span>}
+                  {m.license && <span className="text-xs text-gray-400">{m.license}</span>}
+                  {m.phone && <span className="text-xs text-gray-400">{m.phone}</span>}
+                  {m.email && <span className="text-xs text-gray-400">{m.email}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Grid of summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">

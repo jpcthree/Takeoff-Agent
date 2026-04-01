@@ -539,8 +539,8 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
           </table>
         )}
 
-        {/* Add Item button */}
-        {hasItems && (
+        {/* Add Item button — always visible in single-trade mode, requires items in all-trades mode */}
+        {(hasItems || tradeFilter) && (
           <div className="px-3 py-2 border-t border-gray-200">
             <button
               onClick={() => {

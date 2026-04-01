@@ -8,6 +8,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
   FileText,
   Upload,
   Play,
@@ -22,7 +23,13 @@ import { useAnalysisPipeline } from '@/hooks/useAnalysisPipeline';
 import { convertPdfClientSide } from '@/lib/utils/pdf-to-images';
 import { getPdfFiles, clearPdfFiles } from '@/lib/utils/pdf-store';
 
-function PdfViewer() {
+interface PdfViewerProps {
+  onExpand?: () => void;
+  onCollapse?: () => void;
+  isExpanded?: boolean;
+}
+
+function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
   const params = useParams();
   const projectId = params?.id as string;
 
@@ -41,7 +48,10 @@ function PdfViewer() {
   const [isConverting, setIsConverting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [autoLoaded, setAutoLoaded] = useState(false);
+  const [showPageJump, setShowPageJump] = useState(false);
+  const [pageJumpValue, setPageJumpValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pageJumpRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalPages = pdfPages.length;
@@ -160,9 +170,45 @@ function PdfViewer() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-xs text-gray-500 min-w-[80px] text-center">
-                Page {currentPage} of {totalPages}
-              </span>
+              {showPageJump ? (
+                <form
+                  className="inline-flex"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const num = parseInt(pageJumpValue);
+                    if (num >= 1 && num <= totalPages) {
+                      setCurrentPage(num);
+                    }
+                    setShowPageJump(false);
+                    setPageJumpValue('');
+                  }}
+                >
+                  <input
+                    ref={pageJumpRef}
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={pageJumpValue}
+                    onChange={(e) => setPageJumpValue(e.target.value)}
+                    onBlur={() => { setShowPageJump(false); setPageJumpValue(''); }}
+                    className="w-12 text-xs text-center border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                    autoFocus
+                    placeholder={String(currentPage)}
+                  />
+                  <span className="text-xs text-gray-500 ml-1">/ {totalPages}</span>
+                </form>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowPageJump(true);
+                    setPageJumpValue(String(currentPage));
+                  }}
+                  className="text-xs text-gray-500 min-w-[80px] text-center hover:text-primary cursor-pointer"
+                  title="Click to jump to a page"
+                >
+                  Page {currentPage} of {totalPages}
+                </button>
+              )}
               <button
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
@@ -172,14 +218,34 @@ function PdfViewer() {
               </button>
             </>
           )}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer ml-1"
-            title="Upload PDF"
-            disabled={isBusy}
-          >
-            <Upload className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-0.5 ml-1 border-l border-gray-200 pl-1">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
+              title="Upload PDF"
+              disabled={isBusy}
+            >
+              <Upload className="h-4 w-4" />
+            </button>
+            {onExpand && !isExpanded && (
+              <button
+                onClick={onExpand}
+                className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
+                title="Expand to full screen"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            )}
+            {isExpanded && onCollapse && (
+              <button
+                onClick={onCollapse}
+                className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
+                title="Exit full screen (Esc)"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"

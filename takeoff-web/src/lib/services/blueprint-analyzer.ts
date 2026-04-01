@@ -52,10 +52,20 @@ interface PageClassification {
   construction_data: boolean;
 }
 
+interface ProjectTeamMember {
+  role: string;
+  name: string;
+  company?: string;
+  license?: string;
+  phone?: string;
+  email?: string;
+}
+
 interface ClassificationResult {
   project_name: string | null;
   project_address: string | null;
   building_type: string;
+  project_team?: ProjectTeamMember[];
   pages: PageClassification[];
 }
 
@@ -646,6 +656,9 @@ export async function analyzeBlueprint(
       }
       if (classification?.building_type && !mergedModel.building_type) {
         mergedModel.building_type = classification.building_type;
+      }
+      if (classification?.project_team?.length && !mergedModel.project_team) {
+        mergedModel.project_team = classification.project_team;
       }
 
       onProgress({

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Building2, List, ChevronDown, ChevronRight } from 'lucide-react';
+import { Building2, List, ChevronDown, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
 import { TradeTabBar } from './TradeTabBar';
 import { SpreadsheetTable } from './SpreadsheetTable';
 import { ProjectDescriptionPanel } from './ProjectDescriptionPanel';
@@ -88,7 +88,13 @@ function NoteCards({
 // Main Component
 // ---------------------------------------------------------------------------
 
-function PlansTabContent() {
+interface PlansTabContentProps {
+  onExpand?: () => void;
+  onCollapse?: () => void;
+  isExpanded?: boolean;
+}
+
+function PlansTabContent({ onExpand, onCollapse, isExpanded }: PlansTabContentProps = {}) {
   const { state } = useProjectStore();
   const [activeTrade, setActiveTrade] = useState('project');
 
@@ -208,16 +214,38 @@ function PlansTabContent() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tab bar */}
-      <TradeTabBar
-        trades={allTabs}
-        activeTrade={activeTrade}
-        onTabChange={setActiveTrade}
-        tradeItemCounts={tradeItemCounts}
-        tradeSubtotals={tradeSubtotals}
-        tabLabels={tabLabels}
-        tabIcons={tabIcons}
-      />
+      {/* Tab bar with expand toggle */}
+      <div className="flex items-center">
+        <div className="flex-1 min-w-0">
+          <TradeTabBar
+            trades={allTabs}
+            activeTrade={activeTrade}
+            onTabChange={setActiveTrade}
+            tradeItemCounts={tradeItemCounts}
+            tradeSubtotals={tradeSubtotals}
+            tabLabels={tabLabels}
+            tabIcons={tabIcons}
+          />
+        </div>
+        {onExpand && !isExpanded && (
+          <button
+            onClick={onExpand}
+            className="p-2 text-gray-400 hover:text-gray-600 cursor-pointer shrink-0 border-b border-gray-200"
+            title="Expand to full screen"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        )}
+        {isExpanded && onCollapse && (
+          <button
+            onClick={onCollapse}
+            className="p-2 text-gray-400 hover:text-gray-600 cursor-pointer shrink-0 border-b border-gray-200"
+            title="Exit full screen (Esc)"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
       {/* Content area */}
       <div className="flex-1 min-h-0 overflow-y-auto">

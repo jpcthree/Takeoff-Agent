@@ -51,6 +51,10 @@ Decide whether each page should be deeply analyzed (\`"analyze"\`) or skipped (\
 
 Extract project name, address, and building type from the title sheet or whichever page displays them. Use \`null\` if not found.
 
+## Project Team
+
+Extract any project team members listed on the title sheet or cover page. Common roles include architect, engineer (structural, MEP, civil), general contractor, owner/client, interior designer, landscape architect, surveyor, and energy consultant. Return as an array of objects with \`role\` and \`name\` (and optionally \`company\`, \`license\`, \`phone\`, \`email\` if visible). Return an empty array if no team members are found.
+
 ## Output Format
 
 Return ONLY valid JSON, no markdown fences, no commentary:
@@ -59,6 +63,10 @@ Return ONLY valid JSON, no markdown fences, no commentary:
   "project_name": "string or null",
   "project_address": "string or null",
   "building_type": "residential|commercial|industrial|mixed_use",
+  "project_team": [
+    { "role": "Architect", "name": "John Smith", "company": "Smith Architecture LLC", "license": "AIA #12345" },
+    { "role": "Structural Engineer", "name": "Jane Doe", "company": "Doe Engineering" }
+  ],
   "pages": [
     {
       "page": 1,

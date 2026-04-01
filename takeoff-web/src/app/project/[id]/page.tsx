@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import {
   Panel,
   Group,
   Separator,
 } from 'react-resizable-panels';
+import { Minimize2 } from 'lucide-react';
 import { PdfViewer } from '@/components/workspace/PdfViewer';
 import { RetrofitWorkspace } from '@/components/workspace/RetrofitWorkspace';
 import { PlansTabContent } from '@/components/workspace/PlansTabContent';
@@ -19,6 +20,7 @@ function WorkspaceInner() {
   const params = useParams();
   const { dispatch, setProjectType } = useProjectStore();
   const [inputMethod, setInputMethod] = useState<'plans' | 'address'>('plans');
+  const [expandedPanel, setExpandedPanel] = useState<'pdf' | 'estimate' | null>(null);
 
   // Load project meta from sessionStorage (works for both local and Supabase projects)
   useEffect(() => {
@@ -48,6 +50,24 @@ function WorkspaceInner() {
     }
   }, [params?.id, dispatch, setProjectType]);
 
+  const handleExpand = useCallback((panel: 'pdf' | 'estimate') => {
+    setExpandedPanel(panel);
+  }, []);
+
+  const handleCollapse = useCallback(() => {
+    setExpandedPanel(null);
+  }, []);
+
+  // Escape key exits expanded mode
+  useEffect(() => {
+    if (!expandedPanel) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpandedPanel(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [expandedPanel]);
+
   const isAddressMode = inputMethod === 'address';
 
   // Retrofit mode: full-page layout with property hero + trade tabs
@@ -59,13 +79,36 @@ function WorkspaceInner() {
     );
   }
 
+  // Expanded panel: full screen with a collapse button
+  if (expandedPanel) {
+    return (
+      <div className="h-full relative">
+        <button
+          onClick={handleCollapse}
+          className="absolute top-2 right-2 z-50 flex items-center gap-1.5 bg-white/90 backdrop-blur border border-gray-200 text-gray-600 hover:text-gray-900 text-xs font-medium px-2.5 py-1.5 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer"
+          title="Exit full screen (Esc)"
+        >
+          <Minimize2 className="h-3.5 w-3.5" />
+          Exit Full Screen
+        </button>
+        <ErrorBoundary>
+          {expandedPanel === 'pdf' ? (
+            <PdfViewer onExpand={() => handleExpand('pdf')} onCollapse={handleCollapse} isExpanded />
+          ) : (
+            <PlansTabContent onExpand={() => handleExpand('estimate')} onCollapse={handleCollapse} isExpanded />
+          )}
+        </ErrorBoundary>
+      </div>
+    );
+  }
+
   // Takeoff mode: 3-panel layout
   return (
     <Group orientation="horizontal" className="h-full">
       {/* Left panel: PDF Viewer */}
       <Panel defaultSize={20} minSize={15}>
         <ErrorBoundary>
-          <PdfViewer />
+          <PdfViewer onExpand={() => handleExpand('pdf')} />
         </ErrorBoundary>
       </Panel>
 
@@ -74,7 +117,7 @@ function WorkspaceInner() {
       {/* Spreadsheet with trade tabs */}
       <Panel defaultSize={55} minSize={30}>
         <ErrorBoundary>
-          <PlansTabContent />
+          <PlansTabContent onExpand={() => handleExpand('estimate')} />
         </ErrorBoundary>
       </Panel>
 
