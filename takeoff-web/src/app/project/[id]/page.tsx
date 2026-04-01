@@ -8,18 +8,21 @@ import {
   Separator,
 } from 'react-resizable-panels';
 import { Minimize2 } from 'lucide-react';
-import { PdfViewer } from '@/components/workspace/PdfViewer';
 import { LeftPanel } from '@/components/workspace/LeftPanel';
 import { RetrofitWorkspace } from '@/components/workspace/RetrofitWorkspace';
 import { PlansTabContent } from '@/components/workspace/PlansTabContent';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ProjectStoreProvider, useProjectStore } from '@/hooks/useProjectStore';
+import { loadSavedEstimate } from '@/lib/data/estimate-persistence';
+import { calculateRow } from '@/lib/utils/calculations';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
+import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 
 /** Inner component that can use the store context */
 function WorkspaceInner() {
   const params = useParams();
-  const { dispatch, setProjectType } = useProjectStore();
+  const { state, dispatch, setProjectType, setLineItems } = useProjectStore();
   const [inputMethod, setInputMethod] = useState<'plans' | 'address'>('plans');
   const [expandedPanel, setExpandedPanel] = useState<'pdf' | 'estimate' | null>(null);
 
@@ -50,6 +53,43 @@ function WorkspaceInner() {
       // Ignore parse errors
     }
   }, [params?.id, dispatch, setProjectType]);
+
+  // Load saved estimate from Supabase on mount (only if no items are loaded)
+  useEffect(() => {
+    const id = params?.id as string;
+    if (!id || !isSupabaseConfigured()) return;
+
+    // Don't reload if we already have items (e.g., just ran analysis)
+    if (state.lineItems.length > 0) return;
+
+    loadSavedEstimate(id).then((saved) => {
+      if (!saved || saved.lineItems.length === 0) return;
+
+      // Convert loaded items to SpreadsheetLineItems with calculated fields
+      const spreadsheetItems: SpreadsheetLineItem[] = saved.lineItems.map((item, idx) => {
+        const calc = calculateRow(item.quantity, item.unitCost, item.laborRatePct, item.unitPrice);
+        return {
+          id: `loaded-${idx}-${Date.now()}`,
+          trade: item.trade,
+          category: item.category,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitCost: item.unitCost,
+          laborRatePct: item.laborRatePct,
+          unitPrice: item.unitPrice,
+          ...calc,
+          sortOrder: item.sortOrder,
+          isUserAdded: item.isUserAdded,
+        };
+      });
+
+      setLineItems(spreadsheetItems, []);
+      dispatch({ type: 'SET_STATUS', status: 'ready' });
+    }).catch((err) => {
+      console.warn('Failed to load saved estimate:', err);
+    });
+  }, [params?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExpand = useCallback((panel: 'pdf' | 'estimate') => {
     setExpandedPanel(panel);

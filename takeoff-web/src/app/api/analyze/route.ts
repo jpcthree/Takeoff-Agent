@@ -68,6 +68,7 @@ Please analyze each page, identify what it shows (floor plan, elevation, section
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 16384,
+      temperature: 0,
       system: ANALYSIS_SYSTEM_PROMPT,
       messages: [
         {

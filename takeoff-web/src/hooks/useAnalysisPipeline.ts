@@ -5,6 +5,8 @@ import { useProjectStore } from './useProjectStore';
 import { calculateSelectedTrades, AVAILABLE_TRADES, getTradeLabel } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
 import { analyzeBlueprint, type AnalysisProgress, type AnalysisResult } from '@/lib/services/blueprint-analyzer';
+import { saveLineItems, saveProjectEstimateData } from '@/lib/data/estimate-persistence';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 /**
  * Hook that orchestrates the full analysis pipeline:
@@ -187,6 +189,26 @@ export function useAnalysisPipeline() {
         if (result.failedTrades && result.failedTrades.length > 0) {
           const failedLabels = result.failedTrades.map(getTradeLabel).join(', ');
           addAnalysisMessage(`⚠ Failed trades: ${failedLabels} — try recalculating individually`);
+        }
+
+        // Persist to Supabase in the background
+        const projectId = state.projectMeta.id;
+        if (projectId && isSupabaseConfigured()) {
+          saveLineItems(projectId, spreadsheetItems).then((res) => {
+            if (res.success) {
+              addAnalysisMessage('✓ Estimate saved');
+            } else {
+              console.warn('Failed to save line items:', res.error);
+            }
+          }).catch(() => {});
+
+          // Save building model on the project record
+          const buildingModelToSave = model || state.buildingModel;
+          if (buildingModelToSave) {
+            saveProjectEstimateData(projectId, {
+              inputMethod: 'plans',
+            }).catch(() => {});
+          }
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {

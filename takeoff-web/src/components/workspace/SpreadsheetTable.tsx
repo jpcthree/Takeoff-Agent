@@ -386,14 +386,39 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                       </tr>
                     )}
 
-                    {/* Item rows */}
+                    {/* Item rows — sorted by category for logical grouping */}
                     {(isSingleTradeMode || !isCollapsed) &&
-                      tradeItems.map((item) => {
+                      [...tradeItems].sort((a, b) => {
+                        // Sort by category first, then by original sort order
+                        const catCmp = (a.category || '').localeCompare(b.category || '');
+                        if (catCmp !== 0) return catCmp;
+                        return a.sortOrder - b.sortOrder;
+                      }).map((item, idx, sorted) => {
                         flatRowIndex++;
                         const currentRowIdx = flatRowIndex;
+                        // Detect category boundaries for visual separator
+                        const prevCategory = idx > 0 ? (sorted[idx - 1].category || '') : null;
+                        const currentCategory = item.category || '';
 
                         return (
-                          <tr key={item.id} className="group border-b border-gray-100 hover:bg-gray-50/80">
+                          <React.Fragment key={item.id}>
+                          {/* Category sub-header when category changes */}
+                          {currentCategory && prevCategory !== null && prevCategory !== currentCategory && (
+                            <tr className="bg-gray-50/70">
+                              <td colSpan={columns.length + 1} className="px-4 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                                {currentCategory}
+                              </td>
+                            </tr>
+                          )}
+                          {/* First item in trade — show category header if it has one */}
+                          {currentCategory && prevCategory === null && (
+                            <tr className="bg-gray-50/70">
+                              <td colSpan={columns.length + 1} className="px-4 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                                {currentCategory}
+                              </td>
+                            </tr>
+                          )}
+                          <tr className="group border-b border-gray-100 hover:bg-gray-50/80">
                             {columns.map((col, colIdx) => {
                               const isEditing = editingCell?.id === item.id && editingCell?.key === col.key;
                               const isEditable = col.editable;
@@ -467,6 +492,7 @@ function SpreadsheetTable({ tradeFilter }: SpreadsheetTableProps = {}) {
                               </button>
                             </td>
                           </tr>
+                          </React.Fragment>
                         );
                       })}
 

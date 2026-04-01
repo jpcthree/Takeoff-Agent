@@ -122,28 +122,32 @@ const SCALE_PATTERNS: {
   confidence: 'high' | 'medium';
 }[] = [
   // ---- Fraction-based scales: <frac>" = 1'-0" --------------------------
+  // NOTE: Patterns use (?<!\d\s?) lookbehind to prevent preceding digits
+  // (e.g. page numbers like "1") from being captured as part of the fraction.
+  // Without this, "Page 1  1/4" = 1'-0"" would match as "1 1/4" instead of "1/4".
 
-  // "1/4" = 1'-0""  (most explicit form)
+  // Mixed number FIRST (more specific): "1 1/2" = 1'-0"" or "1-1/2" = 1'-0""
+  // Must be preceded by SCALE prefix or non-digit to avoid page-number false match
   {
-    regex: /(\d+(?:[\s-]+\d+)?\/\d+)\s*"?\s*=\s*1\s*'-?\s*0?\s*"?/gi,
+    regex: /(?:SCALE\s*[:=]\s*|(?<!\d\s?))(\d+[\s-]\d+\/\d+)\s*"?\s*=\s*1\s*'-?\s*0?\s*"?/gi,
     type: 'fraction',
     confidence: 'high',
   },
-  // "1/4" = 1'"  (abbreviated foot mark)
+  // Simple fraction: "1/4" = 1'-0"" — must NOT be preceded by a digit
   {
-    regex: /(\d+(?:[\s-]+\d+)?\/\d+)\s*"\s*=\s*1\s*'/gi,
+    regex: /(?<!\d[\s-]?)(\d+\/\d+)\s*"?\s*=\s*1\s*'-?\s*0?\s*"?/gi,
+    type: 'fraction',
+    confidence: 'high',
+  },
+  // Simple fraction abbreviated: "1/4" = 1'"
+  {
+    regex: /(?<!\d[\s-]?)(\d+\/\d+)\s*"\s*=\s*1\s*'/gi,
     type: 'fraction',
     confidence: 'high',
   },
   // Whole-number inch scales: "1" = 1'-0"", "3" = 1'-0""
   {
-    regex: /(\d+)\s*"\s*=\s*1\s*'-?\s*0?\s*"?/gi,
-    type: 'fraction',
-    confidence: 'high',
-  },
-  // Mixed number: "1-1/2" = 1'-0""
-  {
-    regex: /(\d+[\s-]+\d+\/\d+)\s*"?\s*=\s*1\s*'-?\s*0?\s*"?/gi,
+    regex: /(?<!\d[\s-]?)(\d+)\s*"\s*=\s*1\s*'-?\s*0?\s*"?/gi,
     type: 'fraction',
     confidence: 'high',
   },

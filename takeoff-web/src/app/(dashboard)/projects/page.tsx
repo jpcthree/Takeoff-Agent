@@ -103,22 +103,18 @@ export default function ProjectsPage() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      // Delete from Supabase if configured
       if (isSupabaseConfigured()) {
-        const supabase = createClient();
-        const { error } = await supabase
-          .from('projects')
-          .delete()
-          .eq('id', deleteTarget.id);
-
-        if (error) {
-          throw new Error(error.message || 'Database delete failed');
+        // Use server-side API route for reliable deletion (handles RLS properly)
+        const res = await fetch(`/api/projects/${deleteTarget.id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: 'Delete request failed' }));
+          throw new Error(body.error || `Delete failed (${res.status})`);
         }
       }
 
       // Clean up local data
       sessionStorage.removeItem(`project-meta-${deleteTarget.id}`);
-      await clearPdfFiles(deleteTarget.id);
+      try { await clearPdfFiles(deleteTarget.id); } catch { /* ignore cleanup errors */ }
 
       // Update UI — only after successful deletion
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));

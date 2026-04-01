@@ -163,6 +163,7 @@ async function classifyPages(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4096,
+    temperature: 0,
     system: PAGE_CLASSIFICATION_PROMPT,
     messages: [{ role: 'user', content: contentBlocks }],
   });
@@ -237,6 +238,7 @@ async function analyzePageDeep(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 8192,
+    temperature: 0,
     system: DEEP_ANALYSIS_PAGE_PROMPT,
     messages: [{ role: 'user', content: contentBlocks }],
   });
@@ -360,6 +362,7 @@ async function smartMerge(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 16384,
+    temperature: 0,
     system: SMART_MERGE_PROMPT,
     messages: [
       {
