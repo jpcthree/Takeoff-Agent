@@ -37,9 +37,11 @@ Decide whether each page should be deeply analyzed (\`"analyze"\`) or skipped (\
 - \`detail\` (wall assemblies, insulation specs, flashing, connections)
 - \`schedule\` (window/door sizes, finish specs, fixture counts)
 
-**Skip** — these rarely contain usable geometry or specs:
+**Analyze (lower priority)** — valuable specs, notes, and code references:
+- \`notes\` (general notes contain material specs, code requirements, insulation specs, and construction guidelines that are critical for accurate cost estimation)
+
+**Skip** — these rarely contain usable construction data:
 - \`title_sheet\`
-- \`notes\` (skip unless they contain critical structural or insulation specs)
 - \`site_plan\`
 - \`other\`
 

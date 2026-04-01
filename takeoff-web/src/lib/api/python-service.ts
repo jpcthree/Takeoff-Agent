@@ -75,6 +75,7 @@ export interface CalculateAllResponse {
   items: LineItemDict[];
   count: number;
   trades: string[];
+  failedTrades?: string[];
 }
 
 export interface CalculateTradeResponse {
@@ -182,6 +183,8 @@ export async function exportXlsx(
     notes?: NoteSection[];
     insulation_notes?: NoteSection[];
     images?: Record<string, string | null>;
+    building_model?: Record<string, unknown>;
+    code_notes?: Record<string, NoteSection[]>;
   }
 ): Promise<void> {
   const res = await fetch('/api/export', {
@@ -194,6 +197,8 @@ export async function exportXlsx(
       ...(options?.notes && { notes: options.notes }),
       ...(options?.insulation_notes && { insulation_notes: options.insulation_notes }),
       ...(options?.images && { images: options.images }),
+      ...(options?.building_model && { building_model: options.building_model }),
+      ...(options?.code_notes && { code_notes: options.code_notes }),
     }),
     signal,
   });
@@ -315,16 +320,28 @@ export async function calculateSelectedTrades(
   const endpoints = Array.from(endpointToTrades.entries());
   let progress = 0;
 
+  const failedTrades: string[] = [];
+
   for (const [endpoint, wantedTrades] of endpoints) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-    const result = await calculateTrade(endpoint, buildingModel, costs, signal);
+    try {
+      const result = await calculateTrade(endpoint, buildingModel, costs, signal);
 
-    // Filter items to only the trades the user actually selected.
-    const wantedSet = new Set(wantedTrades);
-    const filtered = result.items.filter((item) => wantedSet.has(item.trade));
-    allItems.push(...filtered);
-    completedTrades.push(...wantedTrades);
+      // Filter items to only the trades the user actually selected.
+      const wantedSet = new Set(wantedTrades);
+      const filtered = result.items.filter((item) => wantedSet.has(item.trade));
+      allItems.push(...filtered);
+      completedTrades.push(...wantedTrades);
+    } catch (err) {
+      // Abort errors should still propagate (user cancelled)
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+
+      // Log but continue with remaining trades
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`Calculator failed for ${endpoint} (trades: ${wantedTrades.join(', ')}): ${msg}`);
+      failedTrades.push(...wantedTrades);
+    }
 
     // Report progress for each wanted trade from this endpoint.
     for (const t of wantedTrades) {
@@ -333,9 +350,14 @@ export async function calculateSelectedTrades(
     }
   }
 
+  if (failedTrades.length > 0) {
+    console.warn(`Trades that failed: ${failedTrades.join(', ')}. ${completedTrades.length} trades succeeded.`);
+  }
+
   return {
     items: allItems,
     count: allItems.length,
     trades: completedTrades,
+    failedTrades: failedTrades.length > 0 ? failedTrades : undefined,
   };
 }

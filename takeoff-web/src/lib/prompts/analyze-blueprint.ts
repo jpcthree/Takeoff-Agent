@@ -210,6 +210,18 @@ Use the Dimension format for all measurements: { "feet": <int>, "inches": <float
     "drain_lines": [],
     "vent_lines": [],
     "gas_line": false
+  },
+  "plan_notes": {
+    "general": ["General construction notes from the plans"],
+    "insulation": ["Insulation-specific notes, R-values, code references"],
+    "drywall": ["Drywall specs, fire ratings, finish levels"],
+    "roofing": ["Roofing material specs, underlayment requirements"],
+    "framing": ["Structural notes, lumber specs, load requirements"],
+    "electrical": ["Electrical notes, panel specs, circuit requirements"],
+    "plumbing": ["Plumbing notes, pipe specs, fixture requirements"],
+    "hvac": ["HVAC notes, equipment specs, duct requirements"],
+    "exterior": ["Exterior finish notes, siding specs, trim details"],
+    "interior": ["Interior finish notes, flooring specs, paint requirements"]
   }
 }
 \`\`\``;
@@ -256,7 +268,8 @@ export const ANALYSIS_RULES = `
    - Count access_panel_count (HVAC/plumbing access panels in drywall).
    - Measure l_bead_lf at transitions between drywall and dissimilar materials (brick, stone, exposed beam).
 10. **Be conservative.** Include items you're unsure about — user can remove them.
-11. **State your assumptions** before the JSON.`;
+11. **State your assumptions** before the JSON.
+12. **Plan notes are critical.** Extract ALL written notes, specifications, code references, and construction guidelines from the plans into the \`plan_notes\` object. Categorize each note by the most relevant trade. Notes that apply broadly go in \`general\`. Include code references (IRC, IECC, local amendments), material specs, installation requirements, and any contractor instructions. Even notes from floor plan pages, detail pages, and section pages should be captured — not just dedicated "notes" pages.`;
 
 // ---------------------------------------------------------------------------
 // Prompt 1: TEXT-PRIMARY (page has extractable text + small thumbnail)

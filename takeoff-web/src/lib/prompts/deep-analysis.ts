@@ -33,6 +33,8 @@ The vector paths and dimension callouts have already been extracted programmatic
 
 3. **EXTRACT specifications**: Read material callouts, insulation types, R-values, framing details, drywall types, roof specs — anything the vector extractor can't capture.
 
+4a. **CAPTURE plan notes**: Extract ALL written notes, general notes, specifications, code references, and construction guidelines visible on the page. Categorize them by trade in the \`plan_notes\` object. This is especially important for dedicated notes pages, but also capture callout notes on floor plans, sections, and details.
+
 4. **USE STATED DIMENSIONS**: When a dimension is explicitly shown on the plans (e.g. "26'-0""), use that exact value. Only use vector-calculated measurements as a FALLBACK when no callout exists for that element.
 
 5. **When NO dimension callout exists**: Use the vector-measured length from the measurement summary. These are calculated from the actual drawn lines using the detected scale — they are as accurate as measuring with a scale ruler.
@@ -60,6 +62,7 @@ export const SMART_MERGE_PROMPT = `You are a construction estimating expert. You
 4. Re-number IDs if needed to avoid duplicates
 5. Fill in any gaps using standard construction defaults
 6. Calculate derived values: total sqft, perimeter, roof area, etc.
+7. **Merge plan_notes**: Combine all plan_notes from every page. Deduplicate entries, keep all unique notes. Categorize by trade — notes that apply to multiple trades go in \`general\`.
 
 ## Dimension Discrepancies
 

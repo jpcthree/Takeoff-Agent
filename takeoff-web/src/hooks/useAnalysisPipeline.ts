@@ -175,6 +175,11 @@ export function useAnalysisPipeline() {
         addAnalysisMessage(
           `✓ Complete: ${result.count} line items across ${result.trades.length} trades`
         );
+
+        if (result.failedTrades && result.failedTrades.length > 0) {
+          const failedLabels = result.failedTrades.map(getTradeLabel).join(', ');
+          addAnalysisMessage(`⚠ Failed trades: ${failedLabels} — try recalculating individually`);
+        }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           addAnalysisMessage('Calculation cancelled');
