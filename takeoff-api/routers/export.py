@@ -29,6 +29,8 @@ class ExportRequest(BaseModel):
     notes: Optional[list[NoteSection]] = None
     insulation_notes: Optional[list[NoteSection]] = None
     images: Optional[dict[str, Optional[str]]] = None  # base64-encoded data URLs
+    building_model: Optional[dict] = None  # BuildingModel JSON for project description sheet
+    code_notes: Optional[dict[str, list[NoteSection]]] = None  # Trade-keyed building code notes
 
 
 def _decode_image(data_url: str, output_path: str) -> Optional[str]:
@@ -88,6 +90,13 @@ async def export_xlsx(req: ExportRequest):
                     if path:
                         image_paths[key] = path
 
+        # Convert code_notes from NoteSection dicts to tuple format
+        code_notes_tuples = None
+        if req.code_notes:
+            code_notes_tuples = {}
+            for trade, sections in req.code_notes.items():
+                code_notes_tuples[trade] = [(s.title, s.lines) for s in sections]
+
         export_estimate(
             items,
             output_path,
@@ -96,6 +105,8 @@ async def export_xlsx(req: ExportRequest):
             notes=notes_tuples,
             insulation_notes=ins_notes_tuples,
             images=image_paths if image_paths else None,
+            building_model=req.building_model,
+            code_notes=code_notes_tuples,
         )
 
         # Return as downloadable file

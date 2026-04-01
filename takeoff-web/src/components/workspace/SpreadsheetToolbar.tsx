@@ -5,6 +5,7 @@ import { Plus, Download, ChevronsDownUp, ChevronsUpDown, Loader2 } from 'lucide-
 import { Button } from '@/components/ui/Button';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { exportXlsx, getTradeLabel } from '@/lib/api/python-service';
+import { generateCodeNotes } from '@/lib/utils/building-code-notes';
 
 interface SpreadsheetToolbarProps {
   trades: string[];
@@ -29,14 +30,18 @@ function SpreadsheetToolbar({
     if (state.rawLineItems.length === 0) return;
     setIsExporting(true);
     try {
-      // For address-based estimates, include notes and images in the export
+      // Build export options based on project type
       const options = state.projectType === 'address'
         ? {
             notes: state.propertyNotes,
             insulation_notes: state.insulationNotes,
             images: state.propertyImages,
           }
-        : undefined;
+        : {
+            // Plans mode: include building model for project description sheet + code notes per trade
+            building_model: state.buildingModel || undefined,
+            code_notes: state.buildingModel ? generateCodeNotes(state.buildingModel) : undefined,
+          };
 
       await exportXlsx(
         state.rawLineItems,
@@ -50,7 +55,7 @@ function SpreadsheetToolbar({
     } finally {
       setIsExporting(false);
     }
-  }, [state.rawLineItems, state.projectMeta, state.projectType, state.propertyNotes, state.insulationNotes, state.propertyImages]);
+  }, [state.rawLineItems, state.projectMeta, state.projectType, state.propertyNotes, state.insulationNotes, state.propertyImages, state.buildingModel]);
 
   const toggleTrade = (trade: string) => {
     const current = visibleTrades ?? new Set(trades);

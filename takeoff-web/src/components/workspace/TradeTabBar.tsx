@@ -10,9 +10,13 @@ interface TradeTabBarProps {
   onTabChange: (trade: string) => void;
   tradeItemCounts: Record<string, number>;
   tradeSubtotals?: Record<string, TradeSubtotal>;
+  /** Override display labels for specific tab IDs (e.g. "project" → "Project") */
+  tabLabels?: Record<string, string>;
+  /** Optional icon elements for specific tab IDs */
+  tabIcons?: Record<string, React.ReactNode>;
 }
 
-function TradeTabBar({ trades, activeTrade, onTabChange, tradeItemCounts, tradeSubtotals }: TradeTabBarProps) {
+function TradeTabBar({ trades, activeTrade, onTabChange, tradeItemCounts, tradeSubtotals, tabLabels, tabIcons }: TradeTabBarProps) {
   if (trades.length === 0) return null;
 
   return (
@@ -34,7 +38,8 @@ function TradeTabBar({ trades, activeTrade, onTabChange, tradeItemCounts, tradeS
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
               ].join(' ')}
             >
-              {getTradeLabel(trade)}
+              {tabIcons?.[trade] && <span className="mr-0.5">{tabIcons[trade]}</span>}
+              {tabLabels?.[trade] ?? getTradeLabel(trade)}
               <span
                 className={[
                   'text-[10px] font-semibold px-1.5 py-0.5 rounded-full',

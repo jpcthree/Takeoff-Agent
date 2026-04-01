@@ -9,7 +9,7 @@ import {
 } from 'react-resizable-panels';
 import { PdfViewer } from '@/components/workspace/PdfViewer';
 import { RetrofitWorkspace } from '@/components/workspace/RetrofitWorkspace';
-import { SpreadsheetTable } from '@/components/workspace/SpreadsheetTable';
+import { PlansTabContent } from '@/components/workspace/PlansTabContent';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ProjectStoreProvider, useProjectStore } from '@/hooks/useProjectStore';
@@ -71,10 +71,10 @@ function WorkspaceInner() {
 
       <Separator className="w-1 bg-gray-200 hover:bg-primary/40 transition-colors" />
 
-      {/* Spreadsheet */}
+      {/* Spreadsheet with trade tabs */}
       <Panel defaultSize={55} minSize={30}>
         <ErrorBoundary>
-          <SpreadsheetTable />
+          <PlansTabContent />
         </ErrorBoundary>
       </Panel>
 

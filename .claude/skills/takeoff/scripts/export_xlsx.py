@@ -203,6 +203,8 @@ def export_estimate(
     notes: list[tuple[str, list[str]]] | None = None,
     insulation_notes: list[tuple[str, list[str]]] | None = None,
     images: dict[str, str] | None = None,
+    building_model: dict | None = None,
+    code_notes: dict[str, list[tuple[str, list[str]]]] | None = None,
 ) -> str:
     """
     Export line items to a formatted .xlsx workbook.
@@ -215,6 +217,8 @@ def export_estimate(
         notes: Optional list of (section_title, [bullet_items]) for property/trade sheets.
         insulation_notes: Optional separate notes for insulation sheet (includes code reqs).
         images: Optional dict of image paths {"street_view": "/path.jpg", "satellite": "/path.jpg"}.
+        building_model: Optional BuildingModel dict for project description sheet (plans mode).
+        code_notes: Optional trade-keyed building code notes for per-trade sheets.
 
     Returns:
         The output file path.
@@ -228,8 +232,11 @@ def export_estimate(
     # Remove the default blank sheet created by Workbook()
     wb.remove(wb.active)
 
-    # ---- Property sheet with images and notes ----
-    if images and any(images.values()):
+    # ---- Project Description sheet (plans mode) ----
+    if building_model:
+        _build_project_description_sheet(wb, building_model, project_name, project_address)
+    # ---- Property sheet with images and notes (address mode) ----
+    elif images and any(images.values()):
         _build_property_sheet(wb, project_name, images, notes=notes)
 
     # ---- Per-trade sheets ----
@@ -237,10 +244,12 @@ def export_estimate(
     for trade, items in by_trade.items():
         safe_name = trade.replace("/", "-")[:31]  # Excel sheet name limit
         ws_trade = wb.create_sheet(safe_name)
+        # Determine trade-specific notes: code_notes override, then general notes
+        trade_notes = (code_notes or {}).get(trade) or notes
         if trade == "insulation":
-            _build_insulation_sheet(ws_trade, items, notes=insulation_notes or notes)
+            _build_insulation_sheet(ws_trade, items, notes=insulation_notes or trade_notes)
         else:
-            _build_trade_sheet(ws_trade, trade, items, notes=notes)
+            _build_trade_sheet(ws_trade, trade, items, notes=trade_notes)
 
     # ---- Detail sheet (last) ----
     ws_detail = wb.create_sheet("Detail")
@@ -249,6 +258,247 @@ def export_estimate(
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     wb.save(output_path)
     return output_path
+
+
+def _dim_to_feet(dim) -> float:
+    """Convert a Dimension dict {feet, inches} to decimal feet."""
+    if not dim or not isinstance(dim, dict):
+        return 0.0
+    return (dim.get("feet", 0) or 0) + ((dim.get("inches", 0) or 0) / 12.0)
+
+
+def _dim_to_str(dim) -> str:
+    """Convert a Dimension dict to a readable string like 12'-6\"."""
+    if not dim or not isinstance(dim, dict):
+        return "—"
+    feet = dim.get("feet", 0) or 0
+    inches = dim.get("inches", 0) or 0
+    if feet == 0 and inches == 0:
+        return "—"
+    if inches == 0:
+        return f"{feet}'-0\""
+    return f"{feet}'-{inches}\""
+
+
+def _clean_label(value: str) -> str:
+    """Convert snake_case to Title Case."""
+    if not value:
+        return ""
+    return value.replace("_", " ").title()
+
+
+_SECTION_HEADER_FONT = Font(name="Calibri", bold=True, size=12, color="1F3864")
+_SECTION_HEADER_FILL = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
+_TABLE_HEADER_FONT = Font(name="Calibri", bold=True, size=10, color="FFFFFF")
+_TABLE_HEADER_FILL = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+_ALT_ROW_FILL = PatternFill(start_color="F2F7FB", end_color="F2F7FB", fill_type="solid")
+
+
+def _build_project_description_sheet(wb, building_model: dict,
+                                     project_name: str = "", project_address: str = ""):
+    """Create a 'Project' sheet with building overview and area measurements."""
+    ws = wb.create_sheet("Project", 0)  # Insert as first sheet
+    bm = building_model
+
+    # Column widths
+    for col, width in [("A", 22), ("B", 18), ("C", 16), ("D", 16), ("E", 14), ("F", 14), ("G", 14)]:
+        ws.column_dimensions[col].width = width
+
+    # ---- Title ----
+    ws.merge_cells("A1:G1")
+    title_cell = ws.cell(row=1, column=1, value=project_name or bm.get("project_name", "Project Description"))
+    title_cell.font = Font(name="Calibri", bold=True, size=18, color="1F3864")
+    title_cell.alignment = Alignment(horizontal="center")
+
+    row = 3
+
+    # ---- Project Info ----
+    info_items = []
+    addr = project_address or bm.get("project_address", "")
+    if addr:
+        info_items.append(("Address", addr))
+    btype = bm.get("building_type", "")
+    if btype:
+        info_items.append(("Building Type", _clean_label(btype)))
+    stories = bm.get("stories", 0)
+    if stories:
+        info_items.append(("Stories", str(stories)))
+    sqft = bm.get("sqft", 0)
+    if sqft:
+        info_items.append(("Total Area", f"{int(sqft):,} SF"))
+    cz = bm.get("climate_zone", "")
+    if cz:
+        edition = bm.get("iecc_code_edition", "")
+        info_items.append(("Climate Zone", f"{cz}" + (f" (IECC {edition})" if edition else "")))
+
+    for label, value in info_items:
+        c = ws.cell(row=row, column=1, value=label)
+        c.font = Font(name="Calibri", bold=True, size=10, color="333333")
+        c = ws.cell(row=row, column=2, value=value)
+        c.font = Font(name="Calibri", size=10, color="333333")
+        row += 1
+
+    row += 1
+
+    # ---- Room Breakdown Table ----
+    rooms = bm.get("rooms", [])
+    if rooms:
+        ws.merge_cells(f"A{row}:G{row}")
+        c = ws.cell(row=row, column=1, value="Room Breakdown")
+        c.font = _SECTION_HEADER_FONT
+        c.fill = _SECTION_HEADER_FILL
+        c.border = _THIN_BORDER
+        for col_idx in range(2, 8):
+            ws.cell(row=row, column=col_idx).fill = _SECTION_HEADER_FILL
+            ws.cell(row=row, column=col_idx).border = _THIN_BORDER
+        row += 1
+
+        headers = ["Room", "Floor", "Length", "Width", "Area (SF)", "Ceiling Type", "Floor Finish"]
+        for col_idx, h in enumerate(headers, start=1):
+            c = ws.cell(row=row, column=col_idx, value=h)
+            c.font = _TABLE_HEADER_FONT
+            c.fill = _TABLE_HEADER_FILL
+            c.alignment = Alignment(horizontal="center")
+            c.border = _THIN_BORDER
+        row += 1
+
+        total_room_area = 0
+        for i, room in enumerate(rooms):
+            l = _dim_to_feet(room.get("length"))
+            w = _dim_to_feet(room.get("width"))
+            area = round(l * w)
+            total_room_area += area
+            fill = _ALT_ROW_FILL if i % 2 == 0 else None
+            vals = [
+                room.get("name", f"Room {i+1}"),
+                room.get("floor", 1),
+                _dim_to_str(room.get("length")),
+                _dim_to_str(room.get("width")),
+                area if area > 0 else "",
+                _clean_label(room.get("ceiling_type", "")) or "—",
+                _clean_label(room.get("floor_finish", "")) or "—",
+            ]
+            for col_idx, val in enumerate(vals, start=1):
+                c = ws.cell(row=row, column=col_idx, value=val)
+                c.border = _THIN_BORDER
+                c.font = Font(name="Calibri", size=10)
+                if col_idx == 5 and isinstance(val, (int, float)) and val > 0:
+                    c.number_format = "#,##0"
+                if fill:
+                    c.fill = fill
+            row += 1
+
+        # Total row
+        c = ws.cell(row=row, column=1, value="Total")
+        c.font = Font(name="Calibri", bold=True, size=10)
+        c.border = _THIN_BORDER
+        for col_idx in range(2, 5):
+            ws.cell(row=row, column=col_idx).border = _THIN_BORDER
+        c = ws.cell(row=row, column=5, value=total_room_area)
+        c.font = Font(name="Calibri", bold=True, size=10)
+        c.number_format = "#,##0"
+        c.border = _THIN_BORDER
+        for col_idx in range(6, 8):
+            ws.cell(row=row, column=col_idx).border = _THIN_BORDER
+        row += 2
+
+    # ---- Roof Summary ----
+    roof = bm.get("roof", {})
+    if roof:
+        ws.merge_cells(f"A{row}:C{row}")
+        c = ws.cell(row=row, column=1, value="Roof Summary")
+        c.font = _SECTION_HEADER_FONT
+        c.fill = _SECTION_HEADER_FILL
+        c.border = _THIN_BORDER
+        for col_idx in range(2, 4):
+            ws.cell(row=row, column=col_idx).fill = _SECTION_HEADER_FILL
+            ws.cell(row=row, column=col_idx).border = _THIN_BORDER
+        row += 1
+        roof_items = []
+        if roof.get("style"):
+            roof_items.append(("Style", _clean_label(roof["style"])))
+        if roof.get("material"):
+            roof_items.append(("Material", _clean_label(roof["material"])))
+        if roof.get("pitch"):
+            roof_items.append(("Pitch", f"{roof['pitch']}/12"))
+        if roof.get("total_area_sf"):
+            roof_items.append(("Total Area", f"{int(roof['total_area_sf']):,} SF"))
+        sections = roof.get("sections", [])
+        if sections:
+            roof_items.append(("Sections", str(len(sections))))
+        for label, value in roof_items:
+            c = ws.cell(row=row, column=1, value=label)
+            c.font = Font(name="Calibri", bold=True, size=10, color="333333")
+            c.border = _THIN_BORDER
+            c = ws.cell(row=row, column=2, value=value)
+            c.font = Font(name="Calibri", size=10)
+            c.border = _THIN_BORDER
+            row += 1
+        row += 1
+
+    # ---- Foundation Summary ----
+    foundation = bm.get("foundation", {})
+    if foundation and foundation.get("type"):
+        ws.merge_cells(f"A{row}:C{row}")
+        c = ws.cell(row=row, column=1, value="Foundation Summary")
+        c.font = _SECTION_HEADER_FONT
+        c.fill = _SECTION_HEADER_FILL
+        c.border = _THIN_BORDER
+        for col_idx in range(2, 4):
+            ws.cell(row=row, column=col_idx).fill = _SECTION_HEADER_FILL
+            ws.cell(row=row, column=col_idx).border = _THIN_BORDER
+        row += 1
+        found_items = [("Type", _clean_label(foundation["type"]))]
+        if foundation.get("area_sf"):
+            found_items.append(("Area", f"{int(foundation['area_sf']):,} SF"))
+        if foundation.get("perimeter_lf"):
+            found_items.append(("Perimeter", f"{int(foundation['perimeter_lf']):,} LF"))
+        for label, value in found_items:
+            c = ws.cell(row=row, column=1, value=label)
+            c.font = Font(name="Calibri", bold=True, size=10, color="333333")
+            c.border = _THIN_BORDER
+            c = ws.cell(row=row, column=2, value=value)
+            c.font = Font(name="Calibri", size=10)
+            c.border = _THIN_BORDER
+            row += 1
+        row += 1
+
+    # ---- Wall Summary ----
+    walls = bm.get("walls", [])
+    if walls:
+        ws.merge_cells(f"A{row}:C{row}")
+        c = ws.cell(row=row, column=1, value="Wall Summary")
+        c.font = _SECTION_HEADER_FONT
+        c.fill = _SECTION_HEADER_FILL
+        c.border = _THIN_BORDER
+        for col_idx in range(2, 4):
+            ws.cell(row=row, column=col_idx).fill = _SECTION_HEADER_FILL
+            ws.cell(row=row, column=col_idx).border = _THIN_BORDER
+        row += 1
+        ext_walls = [w for w in walls if w.get("is_exterior")]
+        int_walls = [w for w in walls if not w.get("is_exterior")]
+        ext_lf = sum(_dim_to_feet(w.get("length")) for w in ext_walls)
+        int_lf = sum(_dim_to_feet(w.get("length")) for w in int_walls)
+        wall_items = [
+            ("Exterior Walls", str(len(ext_walls))),
+            ("Exterior LF", f"{round(ext_lf):,} LF"),
+            ("Interior Walls", str(len(int_walls))),
+            ("Interior LF", f"{round(int_lf):,} LF"),
+        ]
+        thicknesses = set(w.get("thickness", "") for w in walls if w.get("thickness"))
+        if thicknesses:
+            wall_items.append(("Framing", ", ".join(sorted(thicknesses))))
+        for label, value in wall_items:
+            c = ws.cell(row=row, column=1, value=label)
+            c.font = Font(name="Calibri", bold=True, size=10, color="333333")
+            c.border = _THIN_BORDER
+            c = ws.cell(row=row, column=2, value=value)
+            c.font = Font(name="Calibri", size=10)
+            c.border = _THIN_BORDER
+            row += 1
+
+    # Zoom
+    ws.sheet_view.zoomScale = 90
 
 
 def _build_property_sheet(wb, project_name: str, images: dict[str, str],
