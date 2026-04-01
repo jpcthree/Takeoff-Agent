@@ -255,7 +255,18 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
 
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
-    setImageDims({ w: img.naturalWidth, h: img.naturalHeight });
+    const natW = img.naturalWidth;
+    const natH = img.naturalHeight;
+    setImageDims({ w: natW, h: natH });
+
+    // Auto-fit zoom to container width on first load (with padding)
+    if (containerRef.current && natW > 0) {
+      const containerW = containerRef.current.clientWidth - 32; // subtract padding
+      if (natW > containerW) {
+        const fitZoom = Math.floor((containerW / natW) * 100);
+        setZoom(Math.max(25, Math.min(100, fitZoom)));
+      }
+    }
   }, []);
 
   /** Handle scale override from toolbar */
@@ -522,17 +533,18 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
         ) : hasPlan && currentPageData ? (
           /* ── Single page view with measurement overlay ── */
           <div
-            className="p-2 relative"
-            style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
+            className="p-2 relative inline-block"
+            style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }}
           >
             <img
               src={`data:${currentPageData.mime_type};base64,${currentPageData.data}`}
               alt={`Page ${currentPage}`}
-              className="max-w-full shadow-sm border border-gray-200"
+              className="shadow-sm border border-gray-200 block"
+              style={{ width: imageDims.w || undefined, height: imageDims.h || undefined }}
               draggable={false}
               onLoad={handleImageLoad}
             />
-            {/* Measurement overlay */}
+            {/* Measurement overlay — must exactly match image dimensions */}
             {imageDims.w > 0 && (
               <MeasurementOverlay
                 measurements={pageMeasurements}
@@ -671,9 +683,17 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
               <ZoomIn className="h-3.5 w-3.5" />
             </button>
             <button
-              onClick={() => setZoom(100)}
+              onClick={() => {
+                if (containerRef.current && imageDims.w > 0) {
+                  const containerW = containerRef.current.clientWidth - 32;
+                  const fitZoom = Math.floor((containerW / imageDims.w) * 100);
+                  setZoom(Math.max(25, Math.min(100, fitZoom)));
+                } else {
+                  setZoom(100);
+                }
+              }}
               className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
-              title="Reset zoom"
+              title="Fit to width"
             >
               <Maximize2 className="h-3.5 w-3.5" />
             </button>

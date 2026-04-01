@@ -2,10 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, FileText } from 'lucide-react';
+import { Plus, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Dialog, DialogTitle, DialogDescription, DialogActions } from '@/components/ui/Dialog';
 import { ProjectGrid } from '@/components/projects/ProjectGrid';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { clearPdfFiles } from '@/lib/utils/pdf-store';
+import { deleteProjectDataLocal } from '@/lib/data/local-persistence';
 import type { Project } from '@/lib/types/database';
 
 export default function TakeoffPage() {
@@ -21,9 +24,9 @@ export default function TakeoffPage() {
           const { data, error } = await supabase
             .from('projects')
             .select('*')
+            .eq('input_method', 'plans')
             .order('updated_at', { ascending: false });
           if (error) throw error;
-          // TODO: filter by project type once stored in DB
           setProjects((data as Project[]) ?? []);
         }
       } catch (err) {
@@ -34,6 +37,37 @@ export default function TakeoffPage() {
     }
     fetchProjects();
   }, []);
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      if (isSupabaseConfigured()) {
+        const res = await fetch(`/api/projects/${deleteTarget.id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: 'Delete request failed' }));
+          throw new Error(body.error || `Delete failed (${res.status})`);
+        }
+      }
+      sessionStorage.removeItem(`project-meta-${deleteTarget.id}`);
+      deleteProjectDataLocal(deleteTarget.id);
+      try { await clearPdfFiles(deleteTarget.id); } catch { /* ignore */ }
+      setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete project';
+      console.error('Failed to delete project:', err);
+      setDeleteError(message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="px-8 py-8">
@@ -53,20 +87,55 @@ export default function TakeoffPage() {
             </p>
           </div>
           <Button
+            variant="ghost"
             icon={<Plus className="h-4 w-4" />}
             onClick={() => router.push('/projects/new-takeoff')}
-            className="bg-white text-blue-700 hover:bg-blue-50 border-0 shrink-0"
+            className="!bg-white !text-blue-700 hover:!bg-blue-50 shadow-sm shrink-0"
           >
             New Takeoff
           </Button>
         </div>
       </div>
 
-      {/* Recent Projects */}
+      {/* Projects */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Projects</h2>
-        <ProjectGrid projects={projects} loading={loading} />
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Takeoff Projects</h2>
+        <ProjectGrid
+          projects={projects}
+          loading={loading}
+          onDelete={(id) => {
+            const project = projects.find((p) => p.id === id);
+            if (project) setDeleteTarget(project);
+          }}
+        />
       </div>
+
+      {/* Delete Dialog */}
+      <Dialog open={!!deleteTarget} onClose={() => { if (!isDeleting) { setDeleteTarget(null); setDeleteError(null); } }}>
+        <DialogTitle>Delete Project</DialogTitle>
+        <DialogDescription>
+          Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This will permanently
+          remove the project and all its data. This action cannot be undone.
+        </DialogDescription>
+        {deleteError && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-700">{deleteError}</p>
+          </div>
+        )}
+        <DialogActions>
+          <Button variant="secondary" onClick={() => { setDeleteTarget(null); setDeleteError(null); }} disabled={isDeleting}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            icon={isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+          >
+            {isDeleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }

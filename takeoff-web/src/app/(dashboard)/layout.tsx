@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FileText, Home, FolderOpen, Settings, LogOut } from 'lucide-react';
+import { FileText, Home, Settings, LogOut } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { useAuth } from '@/components/providers/AuthProvider';
 
@@ -13,7 +13,6 @@ const toolLinks = [
 ];
 
 const managementLinks = [
-  { href: '/projects', label: 'Projects', icon: FolderOpen },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
