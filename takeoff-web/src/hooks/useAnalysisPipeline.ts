@@ -4,7 +4,7 @@ import { useCallback, useRef } from 'react';
 import { useProjectStore } from './useProjectStore';
 import { calculateSelectedTrades, AVAILABLE_TRADES, getTradeLabel } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
-import { analyzeBlueprint, type AnalysisProgress } from '@/lib/services/blueprint-analyzer';
+import { analyzeBlueprint, type AnalysisProgress, type AnalysisResult } from '@/lib/services/blueprint-analyzer';
 
 /**
  * Hook that orchestrates the full analysis pipeline:
@@ -92,7 +92,7 @@ export function useAnalysisPipeline() {
           addAnalysisMessage(progress.message);
         };
 
-        const buildingModel = await analyzeBlueprint(
+        const result = await analyzeBlueprint(
           state.pdfFile,
           projectMeta || {},
           apiKey,
@@ -100,10 +100,14 @@ export function useAnalysisPipeline() {
           controller.signal
         );
 
-        if (buildingModel) {
-          setBuildingModel(buildingModel);
+        if (result) {
+          setBuildingModel(result.model);
+          // Persist detected page scales for the measurement tool
+          if (Object.keys(result.pageScales).length > 0) {
+            dispatch({ type: 'SET_PAGE_SCALES', scales: result.pageScales });
+          }
           addAnalysisMessage('✓ Building model extracted — ready to calculate');
-          return buildingModel;
+          return result.model;
         } else {
           throw new Error(
             'No building model extracted. The blueprint may not contain recognizable construction details.'

@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import type { PdfPage, LineItemDict, NoteSection, PropertyInfo } from '@/lib/api/python-service';
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
+import type { Measurement, ActiveMeasurementTool } from '@/lib/types/measurement';
+import type { ScaleInfo } from '@/lib/utils/scale-detection';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,6 +67,14 @@ export interface ProjectState {
   assumptions: string[];
   /** Roof material classification from Claude Vision */
   roofClassification: Record<string, string>;
+
+  // ── Measurement tool fields ──
+  /** User-created manual measurements from blueprint pages */
+  measurements: Measurement[];
+  /** Detected scale per page number */
+  pageScales: Record<number, ScaleInfo>;
+  /** Currently active measurement tool configuration (null = tool inactive) */
+  activeMeasurementTool: ActiveMeasurementTool | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +99,11 @@ type ProjectAction =
   | { type: 'CLEAR_ANALYSIS_MESSAGES' }
   | { type: 'SET_PROJECT_TYPE'; projectType: 'plans' | 'address' }
   | { type: 'SET_ESTIMATE_DATA'; propertyData: PropertyInfo; propertyImages: Record<string, string | null>; propertyNotes: NoteSection[]; insulationNotes: NoteSection[]; assumptions: string[]; roofClassification: Record<string, string> }
+  | { type: 'SET_PAGE_SCALES'; scales: Record<number, ScaleInfo> }
+  | { type: 'ADD_MEASUREMENT'; measurement: Measurement }
+  | { type: 'UPDATE_MEASUREMENT'; id: string; changes: Partial<Measurement> }
+  | { type: 'REMOVE_MEASUREMENT'; id: string }
+  | { type: 'SET_ACTIVE_MEASUREMENT_TOOL'; tool: ActiveMeasurementTool | null }
   | { type: 'RESET' };
 
 // ---------------------------------------------------------------------------
@@ -113,6 +128,9 @@ const initialState: ProjectState = {
   insulationNotes: [],
   assumptions: [],
   roofClassification: {},
+  measurements: [],
+  pageScales: {},
+  activeMeasurementTool: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -216,6 +234,29 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
         roofClassification: action.roofClassification,
       };
 
+    case 'SET_PAGE_SCALES':
+      return { ...state, pageScales: action.scales };
+
+    case 'ADD_MEASUREMENT':
+      return { ...state, measurements: [...state.measurements, action.measurement] };
+
+    case 'UPDATE_MEASUREMENT':
+      return {
+        ...state,
+        measurements: state.measurements.map((m) =>
+          m.id === action.id ? { ...m, ...action.changes } : m
+        ),
+      };
+
+    case 'REMOVE_MEASUREMENT':
+      return {
+        ...state,
+        measurements: state.measurements.filter((m) => m.id !== action.id),
+      };
+
+    case 'SET_ACTIVE_MEASUREMENT_TOOL':
+      return { ...state, activeMeasurementTool: action.tool };
+
     case 'RESET':
       return initialState;
 
@@ -255,6 +296,11 @@ interface ProjectStoreContextValue {
     assumptions: string[];
     roofClassification: Record<string, string>;
   }) => void;
+  setPageScales: (scales: Record<number, ScaleInfo>) => void;
+  addMeasurement: (measurement: Measurement) => void;
+  updateMeasurement: (id: string, changes: Partial<Measurement>) => void;
+  removeMeasurement: (id: string) => void;
+  setActiveMeasurementTool: (tool: ActiveMeasurementTool | null) => void;
 }
 
 const ProjectStoreContext = createContext<ProjectStoreContextValue | null>(null);
@@ -298,6 +344,11 @@ export function ProjectStoreProvider({
     assumptions: string[];
     roofClassification: Record<string, string>;
   }) => dispatch({ type: 'SET_ESTIMATE_DATA', ...data }), []);
+  const setPageScales = useCallback((scales: Record<number, ScaleInfo>) => dispatch({ type: 'SET_PAGE_SCALES', scales }), []);
+  const addMeasurement = useCallback((measurement: Measurement) => dispatch({ type: 'ADD_MEASUREMENT', measurement }), []);
+  const updateMeasurement = useCallback((id: string, changes: Partial<Measurement>) => dispatch({ type: 'UPDATE_MEASUREMENT', id, changes }), []);
+  const removeMeasurement = useCallback((id: string) => dispatch({ type: 'REMOVE_MEASUREMENT', id }), []);
+  const setActiveMeasurementTool = useCallback((tool: ActiveMeasurementTool | null) => dispatch({ type: 'SET_ACTIVE_MEASUREMENT_TOOL', tool }), []);
 
   return (
     <ProjectStoreContext.Provider
@@ -320,6 +371,11 @@ export function ProjectStoreProvider({
         addAnalysisMessage,
         setProjectType,
         setEstimateData,
+        setPageScales,
+        addMeasurement,
+        updateMeasurement,
+        removeMeasurement,
+        setActiveMeasurementTool,
       }}
     >
       {children}

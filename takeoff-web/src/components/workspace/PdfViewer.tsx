@@ -17,19 +17,31 @@ import {
   X,
   Clock,
   AlertCircle,
+  Ruler,
 } from 'lucide-react';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useAnalysisPipeline } from '@/hooks/useAnalysisPipeline';
+import { useMeasurementTool } from '@/hooks/useMeasurementTool';
 import { convertPdfClientSide } from '@/lib/utils/pdf-to-images';
 import { getPdfFiles, clearPdfFiles } from '@/lib/utils/pdf-store';
+import { MeasurementOverlay } from './MeasurementOverlay';
+import { MeasurementToolbar } from './MeasurementToolbar';
+import {
+  polylineLength,
+  formatPixelDistance,
+  polygonArea,
+  pixelAreaToRealSF,
+} from '@/lib/utils/measurement-math';
 
 interface PdfViewerProps {
   onExpand?: () => void;
   onCollapse?: () => void;
   isExpanded?: boolean;
+  /** ID of measurement to highlight on the overlay */
+  highlightedMeasurementId?: string | null;
 }
 
-function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
+function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId }: PdfViewerProps = {}) {
   const params = useParams();
   const projectId = params?.id as string;
 
@@ -50,14 +62,53 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
   const [autoLoaded, setAutoLoaded] = useState(false);
   const [showPageJump, setShowPageJump] = useState(false);
   const [pageJumpValue, setPageJumpValue] = useState('');
+  const [showMeasureToolbar, setShowMeasureToolbar] = useState(false);
+  const [imageDims, setImageDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pageJumpRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const totalPages = pdfPages.length;
   const hasPlan = totalPages > 0;
   const currentPageData = hasPlan ? pdfPages[currentPage - 1] : null;
   const isBusy = isAnalyzing || isCalculating || isConverting;
+
+  // ── Scale for measurement ──
+  const pageScale = state.pageScales[currentPage];
+  const scaleFactor = pageScale?.scaleFactor || 48; // default 1/4" = 1'-0"
+  const scaleString = pageScale?.scaleString || '';
+
+  // ── Measurement tool ──
+  const measurement = useMeasurementTool(scaleFactor, scaleString, currentPage);
+  const {
+    toolState,
+    activePoints,
+    cursorPos,
+    activeTool,
+    startTool,
+    handleClick: measureClick,
+    handleDoubleClick: measureDoubleClick,
+    handleMouseMove: measureMouseMove,
+    undoLastPoint,
+    cancelMeasurement,
+    deactivateTool,
+    confirmMeasurement,
+  } = measurement;
+
+  // Measurements for current page only
+  const pageMeasurements = state.measurements.filter((m) => m.pageNumber === currentPage);
+
+  // Running label for the toolbar
+  let runningLabel = '';
+  if (activePoints.length >= 2 && activeTool && scaleFactor > 0) {
+    if (activeTool.mode === 'linear' || activeTool.mode === 'surface_area') {
+      runningLabel = formatPixelDistance(polylineLength(activePoints), scaleFactor);
+    } else if (activeTool.mode === 'area' && activePoints.length >= 3) {
+      const sf = pixelAreaToRealSF(polygonArea(activePoints), scaleFactor);
+      runningLabel = `${Math.round(sf).toLocaleString()} SF`;
+    }
+  }
 
   // Auto-load PDF files from IndexedDB (uploaded during wizard)
   useEffect(() => {
@@ -68,7 +119,6 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
       try {
         const files = await getPdfFiles(projectId);
         if (files.length > 0) {
-          // Convert the first PDF file
           const file = files[0];
           setPdfFile(file);
           setIsConverting(true);
@@ -80,7 +130,6 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
           setStatus('idle');
           setIsConverting(false);
 
-          // Clean up IndexedDB after loading
           await clearPdfFiles(projectId);
         }
       } catch (err) {
@@ -107,6 +156,33 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
     };
   }, [isAnalyzing, isCalculating]);
 
+  // Keyboard shortcuts for measurement tool
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 'm' || e.key === 'M') {
+        if (!activeTool) {
+          setShowMeasureToolbar((v) => !v);
+        }
+      } else if (e.key === 'Escape') {
+        if (toolState === 'measuring' || toolState === 'naming') {
+          cancelMeasurement();
+        } else if (activeTool) {
+          deactivateTool();
+          setShowMeasureToolbar(false);
+        }
+      } else if (e.key === 'Backspace' && toolState === 'measuring') {
+        e.preventDefault();
+        undoLastPoint();
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTool, toolState, cancelMeasurement, deactivateTool, undoLastPoint]);
+
   const handleFileUpload = useCallback(
     async (file: File) => {
       if (!file.name.toLowerCase().endsWith('.pdf')) {
@@ -119,7 +195,6 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
       setStatus('converting');
 
       try {
-        // Use client-side conversion (no Python API needed)
         const result = await convertPdfClientSide(file, 150);
         setPdfPages(result.pages);
         setCurrentPage(1);
@@ -149,11 +224,18 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
     e.preventDefault();
   }, []);
 
+  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setImageDims({ w: img.naturalWidth, h: img.naturalHeight });
+  }, []);
+
   const formatElapsed = (s: number) => {
     const min = Math.floor(s / 60);
     const sec = s % 60;
     return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
   };
+
+  const isMeasuring = !!activeTool;
 
   return (
     <div className="flex h-full flex-col bg-gray-50">
@@ -219,6 +301,26 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
             </>
           )}
           <div className="flex items-center gap-0.5 ml-1 border-l border-gray-200 pl-1">
+            {hasPlan && (
+              <button
+                onClick={() => {
+                  if (isMeasuring) {
+                    deactivateTool();
+                    setShowMeasureToolbar(false);
+                  } else {
+                    setShowMeasureToolbar((v) => !v);
+                  }
+                }}
+                className={`p-1 cursor-pointer transition-colors ${
+                  isMeasuring || showMeasureToolbar
+                    ? 'text-primary'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+                title="Measurement tool (M)"
+              >
+                <Ruler className="h-4 w-4" />
+              </button>
+            )}
             <button
               onClick={() => fileInputRef.current?.click()}
               className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
@@ -259,21 +361,45 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
         </div>
       </div>
 
+      {/* Measurement toolbar (below header, above content) */}
+      {hasPlan && (showMeasureToolbar || isMeasuring) && (
+        <MeasurementToolbar
+          toolState={toolState}
+          activeTool={activeTool}
+          activePointCount={activePoints.length}
+          runningLabel={runningLabel}
+          scaleString={scaleString}
+          onStartTool={(tool) => {
+            startTool(tool);
+            setShowMeasureToolbar(false);
+          }}
+          onFinish={measureDoubleClick}
+          onUndo={undoLastPoint}
+          onCancel={cancelMeasurement}
+          onDeactivate={() => {
+            deactivateTool();
+            setShowMeasureToolbar(false);
+          }}
+          onConfirm={confirmMeasurement}
+        />
+      )}
+
       {/* Content */}
       <div
-        className="flex-1 overflow-auto custom-scrollbar flex items-center justify-center"
+        ref={containerRef}
+        className="flex-1 overflow-auto custom-scrollbar flex items-start justify-center"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
         {isConverting ? (
-          <div className="flex flex-col items-center gap-3 text-center px-6">
+          <div className="flex flex-col items-center gap-3 text-center px-6 mt-20">
             <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             <p className="text-sm text-gray-500">Converting PDF pages...</p>
             <p className="text-xs text-gray-400">This may take a moment for large files</p>
           </div>
         ) : hasPlan && currentPageData ? (
           <div
-            className="p-2"
+            className="p-2 relative"
             style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
           >
             <img
@@ -281,11 +407,30 @@ function PdfViewer({ onExpand, onCollapse, isExpanded }: PdfViewerProps = {}) {
               alt={`Page ${currentPage}`}
               className="max-w-full shadow-sm border border-gray-200"
               draggable={false}
+              onLoad={handleImageLoad}
             />
+            {/* Measurement overlay */}
+            {imageDims.w > 0 && (
+              <MeasurementOverlay
+                measurements={pageMeasurements}
+                activePoints={activePoints}
+                cursorPos={cursorPos}
+                zoom={zoom}
+                scaleFactor={scaleFactor}
+                mode={activeTool?.mode || null}
+                activeTrade={activeTool?.trade || null}
+                imageWidth={imageDims.w}
+                imageHeight={imageDims.h}
+                onPointClick={(pt) => measureClick(pt)}
+                onDoubleClick={measureDoubleClick}
+                onMouseMove={(pt) => measureMouseMove(pt)}
+                highlightedId={highlightedMeasurementId}
+              />
+            )}
           </div>
         ) : (
           <div
-            className="flex flex-col items-center gap-3 text-center px-6 cursor-pointer"
+            className="flex flex-col items-center gap-3 text-center px-6 cursor-pointer mt-20"
             onClick={() => fileInputRef.current?.click()}
           >
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">

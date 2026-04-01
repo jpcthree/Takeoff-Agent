@@ -9,6 +9,7 @@ import {
 } from 'react-resizable-panels';
 import { Minimize2 } from 'lucide-react';
 import { PdfViewer } from '@/components/workspace/PdfViewer';
+import { LeftPanel } from '@/components/workspace/LeftPanel';
 import { RetrofitWorkspace } from '@/components/workspace/RetrofitWorkspace';
 import { PlansTabContent } from '@/components/workspace/PlansTabContent';
 import { ChatPanel } from '@/components/chat/ChatPanel';
@@ -93,7 +94,7 @@ function WorkspaceInner() {
         </button>
         <ErrorBoundary>
           {expandedPanel === 'pdf' ? (
-            <PdfViewer onExpand={() => handleExpand('pdf')} onCollapse={handleCollapse} isExpanded />
+            <LeftPanel onExpand={() => handleExpand('pdf')} onCollapse={handleCollapse} isExpanded />
           ) : (
             <PlansTabContent onExpand={() => handleExpand('estimate')} onCollapse={handleCollapse} isExpanded />
           )}
@@ -105,10 +106,10 @@ function WorkspaceInner() {
   // Takeoff mode: 3-panel layout
   return (
     <Group orientation="horizontal" className="h-full">
-      {/* Left panel: PDF Viewer */}
+      {/* Left panel: Plans + Takeoffs */}
       <Panel defaultSize={20} minSize={15}>
         <ErrorBoundary>
-          <PdfViewer onExpand={() => handleExpand('pdf')} />
+          <LeftPanel onExpand={() => handleExpand('pdf')} />
         </ErrorBoundary>
       </Panel>
 

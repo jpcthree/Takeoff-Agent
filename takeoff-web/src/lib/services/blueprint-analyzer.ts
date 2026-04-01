@@ -391,13 +391,18 @@ ${pagesDescription}`,
  *
  * Runs entirely in the browser — no Vercel function involved.
  */
+export interface AnalysisResult {
+  model: Record<string, unknown>;
+  pageScales: Record<number, ScaleInfo>;
+}
+
 export async function analyzeBlueprint(
   file: File,
   projectMeta: { name?: string; address?: string; buildingType?: string },
   apiKey: string,
   onProgress: ProgressCallback,
   signal?: AbortSignal
-): Promise<Record<string, unknown> | null> {
+): Promise<AnalysisResult | null> {
   const client = new Anthropic({
     apiKey,
     dangerouslyAllowBrowser: true,
@@ -568,6 +573,15 @@ export async function analyzeBlueprint(
     message: `✓ Vector measurements applied to ${measuredCount} pages`,
   });
 
+  // Build per-page scale lookup (highest confidence wins per page)
+  const pageScales: Record<number, ScaleInfo> = {};
+  for (const s of detectedScales) {
+    const existing = pageScales[s.pageNumber];
+    if (!existing || (s.confidence === 'high' && existing.confidence !== 'high')) {
+      pageScales[s.pageNumber] = s;
+    }
+  }
+
   if (signal?.aborted) return null;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -667,7 +681,7 @@ export async function analyzeBlueprint(
         totalPages,
         message: `✓ Building model complete (${pageResults.length} pages analyzed)`,
       });
-      return mergedModel;
+      return { model: mergedModel, pageScales };
     } else {
       // Fallback: return the best single page result
       onProgress({
@@ -676,7 +690,7 @@ export async function analyzeBlueprint(
         totalPages,
         message: '⚠ Merge failed, using best single-page result',
       });
-      return pageResults[0].model;
+      return { model: pageResults[0].model, pageScales };
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -688,7 +702,7 @@ export async function analyzeBlueprint(
     });
     // Still try to return something useful
     if (pageResults.length > 0) {
-      return pageResults[0].model;
+      return { model: pageResults[0].model, pageScales };
     }
     return null;
   }
