@@ -61,7 +61,8 @@
     "joist_hanger": { "unit": "ea", "cost": 4.25 },
     "nails_framing_16d": { "unit": "box", "cost": 65.00 },
     "nails_framing_8d": { "unit": "box", "cost": 55.00 },
-    "construction_adhesive": { "unit": "tube", "cost": 5.50 }
+    "construction_adhesive": { "unit": "tube", "cost": 5.50 },
+    "hurricane_tie": { "unit": "ea", "cost": 3.50 }
   },
   "insulation": {
     "batt_r13_2x4_15in": { "unit": "sf", "cost": 0.55 },
@@ -79,7 +80,20 @@
     "rigid_polyiso_2in": { "unit": "sheet", "cost": 48.00 },
     "vapor_barrier_6mil": { "unit": "sf", "cost": 0.12 },
     "house_wrap_per_sf": { "unit": "sf", "cost": 0.18 },
-    "foam_sealant_can": { "unit": "can", "cost": 6.50 }
+    "foam_sealant_can": { "unit": "can", "cost": 6.50 },
+    "mineral_wool_r15_2x4": { "unit": "sf", "cost": 1.15 },
+    "mineral_wool_r23_2x6": { "unit": "sf", "cost": 1.45 },
+    "air_seal_foam_can": { "unit": "can", "cost": 6.50 },
+    "air_seal_caulk": { "unit": "tube", "cost": 5.50 },
+    "rigid_crawlspace_r10": { "unit": "sheet_4x8", "cost": 38.00 },
+    "rigid_eps_1in": { "unit": "sheet_4x8", "cost": 18.00 },
+    "rigid_eps_2in": { "unit": "sheet_4x8", "cost": 30.00 },
+    "insulation_support_wire": { "unit": "roll", "cost": 45.00, "coverage_note": "~300 sf" },
+    "insulation_support_netting": { "unit": "roll", "cost": 65.00, "coverage_note": "~250 sf" },
+    "attic_baffle": { "unit": "ea", "cost": 1.50 },
+    "attic_hatch_cover": { "unit": "ea", "cost": 35.00 },
+    "cap_staples_box": { "unit": "box", "cost": 15.00 },
+    "house_wrap_tape": { "unit": "roll", "cost": 12.00 }
   },
   "drywall": {
     "drywall_1_2_4x8": { "unit": "sheet", "cost": 14.50 },
@@ -95,7 +109,19 @@
     "drywall_screws_1lb": { "unit": "box", "cost": 8.50 },
     "drywall_screws_5lb": { "unit": "box", "cost": 32.00 },
     "texture_compound": { "unit": "bucket", "cost": 22.00 },
-    "drywall_adhesive": { "unit": "tube", "cost": 5.75 }
+    "drywall_adhesive": { "unit": "tube", "cost": 5.75 },
+    "drywall_primer_pva": { "unit": "gal", "cost": 22.00 },
+    "mold_resistant_1_2_4x8": { "unit": "sheet", "cost": 20.00 },
+    "abuse_resistant_1_2_4x8": { "unit": "sheet", "cost": 24.00 },
+    "shaftliner_1in_4x8": { "unit": "sheet", "cost": 28.00 },
+    "type_c_5_8_4x8": { "unit": "sheet", "cost": 22.00 },
+    "drywall_1_2_4x10": { "unit": "sheet", "cost": 17.50 },
+    "drywall_5_8_4x10": { "unit": "sheet", "cost": 20.00 },
+    "setting_compound_18lb": { "unit": "bag", "cost": 14.00 },
+    "corner_bead_bullnose_8ft": { "unit": "ea", "cost": 5.50 },
+    "l_bead_10ft": { "unit": "ea", "cost": 3.75 },
+    "access_panel_12x12": { "unit": "ea", "cost": 18.00 },
+    "access_panel_24x24": { "unit": "ea", "cost": 32.00 }
   },
   "roofing": {
     "shingle_architectural": { "unit": "bundle", "cost": 38.00, "coverage_note": "3 bundles = 1 square (100 sf)" },
@@ -105,21 +131,41 @@
     "underlayment_15lb_felt": { "unit": "roll", "cost": 24.00, "coverage_note": "covers ~400 sf" },
     "underlayment_synthetic": { "unit": "roll", "cost": 65.00, "coverage_note": "covers ~1000 sf" },
     "ice_water_shield": { "unit": "roll", "cost": 55.00, "coverage_note": "covers ~75 sf (1.5 ft x 50 ft)" },
-    "flashing_step": { "unit": "ea", "cost": 0.85 },
+    "flashing_step": { "unit": "kit", "cost": 25.00 },
     "flashing_valley": { "unit": "lf", "cost": 2.50 },
     "flashing_pipe_boot": { "unit": "ea", "cost": 14.00 },
     "ridge_cap_shingle": { "unit": "bundle", "cost": 52.00, "coverage_note": "covers ~25 lf" },
     "ridge_vent": { "unit": "lf", "cost": 3.50 },
     "drip_edge": { "unit": "ea", "cost": 8.50, "coverage_note": "10 ft piece" },
-    "roofing_nails": { "unit": "box", "cost": 45.00 },
+    "roofing_nails": { "unit": "lb", "cost": 2.50 },
     "roof_cement": { "unit": "tube", "cost": 6.50 },
-    "soffit_vent": { "unit": "ea", "cost": 5.50 }
+    "soffit_vent": { "unit": "ea", "cost": 5.50 },
+    "shingle_designer": { "unit": "bundle", "cost": 65.00, "coverage_note": "3 bundles = 1 square (100 sf)" },
+    "flashing_counter": { "unit": "lf", "cost": 3.50 },
+    "flashing_chimney_kit": { "unit": "ea", "cost": 85.00 },
+    "flashing_skylight_kit": { "unit": "ea", "cost": 65.00 },
+    "power_vent": { "unit": "ea", "cost": 85.00 },
+    "underlayment_high_temp": { "unit": "roll", "cost": 45.00, "coverage_note": "covers ~200 sf" },
+    "flashing_step_lf": { "unit": "lf", "cost": 2.50 },
+    "underlayment_30lb_felt": { "unit": "roll", "cost": 35.00, "coverage_note": "covers ~200 sf" }
   },
   "gutters": {
     "gutter_5in_aluminum": { "unit": "lf", "cost": 3.50 },
+    "gutter_5in_steel": { "unit": "lf", "cost": 5.50 },
+    "gutter_5in_copper": { "unit": "lf", "cost": 18.00 },
+    "gutter_5in_galvalume": { "unit": "lf", "cost": 4.50 },
     "gutter_6in_aluminum": { "unit": "lf", "cost": 4.75 },
+    "gutter_6in_steel": { "unit": "lf", "cost": 7.00 },
+    "gutter_6in_copper": { "unit": "lf", "cost": 22.00 },
+    "gutter_6in_galvalume": { "unit": "lf", "cost": 5.75 },
     "downspout_2x3_aluminum": { "unit": "ea", "cost": 12.00, "coverage_note": "10 ft piece" },
-    "downspout_3x4_aluminum": { "unit": "ea", "cost": 16.00, "coverage_note": "10 ft piece" },
+    "downspout_3x4_aluminum": { "unit": "ea_10ft", "cost": 14.00 },
+    "downspout_3x4_steel": { "unit": "ea_10ft", "cost": 18.00 },
+    "downspout_3x4_copper": { "unit": "ea_10ft", "cost": 45.00 },
+    "downspout_4_round_aluminum": { "unit": "ea_10ft", "cost": 14.00 },
+    "downspout_4x5_aluminum": { "unit": "ea_10ft", "cost": 18.00 },
+    "downspout_2x3_steel": { "unit": "ea_10ft", "cost": 14.00 },
+    "downspout_2x3_copper": { "unit": "ea_10ft", "cost": 35.00 },
     "gutter_hanger": { "unit": "ea", "cost": 2.75 },
     "end_cap": { "unit": "ea", "cost": 3.50 },
     "inside_miter": { "unit": "ea", "cost": 8.50 },
@@ -129,7 +175,9 @@
     "downspout_strap": { "unit": "ea", "cost": 2.25 },
     "splash_block": { "unit": "ea", "cost": 8.00 },
     "gutter_sealant": { "unit": "tube", "cost": 5.50 },
-    "gutter_screen": { "unit": "lf", "cost": 1.75 }
+    "gutter_screen": { "unit": "lf", "cost": 1.75 },
+    "gutter_guard_micro_mesh": { "unit": "lf", "cost": 4.50 },
+    "expansion_joint": { "unit": "ea", "cost": 8.00 }
   },
   "hvac": {
     "furnace_80k_btu": { "unit": "ea", "cost": 2200.00 },
@@ -162,7 +210,18 @@
     "condensate_pvc": { "unit": "lf", "cost": 1.50 },
     "duct_tape_foil": { "unit": "roll", "cost": 14.00 },
     "duct_mastic": { "unit": "gal", "cost": 22.00 },
-    "duct_insulation": { "unit": "lf", "cost": 2.75 }
+    "duct_insulation": { "unit": "lf", "cost": 2.75 },
+    "evaporator_coil": { "unit": "ea", "cost": 600.00 },
+    "air_handler": { "unit": "ea", "cost": 1200.00 },
+    "condenser_pad": { "unit": "ea", "cost": 50.00 },
+    "duct_hanger": { "unit": "ea", "cost": 2.00 },
+    "filter_grille": { "unit": "ea", "cost": 25.00 },
+    "zone_damper": { "unit": "ea", "cost": 150.00 },
+    "zone_panel": { "unit": "ea", "cost": 300.00 },
+    "condensate_pump": { "unit": "ea", "cost": 60.00 },
+    "exhaust_fan_bath": { "unit": "ea", "cost": 80.00 },
+    "duct_flex_4in": { "unit": "lf", "cost": 1.50 },
+    "vent_cap_4in": { "unit": "ea", "cost": 15.00 }
   },
   "electrical": {
     "panel_200amp": { "unit": "ea", "cost": 550.00 },
@@ -215,7 +274,14 @@
     "wire_staples": { "unit": "box", "cost": 8.50 },
     "wire_nuts_assorted": { "unit": "box", "cost": 12.00 },
     "conduit_emt_1_2": { "unit": "ea", "cost": 5.50, "coverage_note": "10 ft stick" },
-    "conduit_emt_3_4": { "unit": "ea", "cost": 7.50, "coverage_note": "10 ft stick" }
+    "conduit_emt_3_4": { "unit": "ea", "cost": 7.50, "coverage_note": "10 ft stick" },
+    "meter_base": { "unit": "ea", "cost": 80.00 },
+    "se_cable_20ft": { "unit": "ea", "cost": 60.00 },
+    "box_4sq_junction": { "unit": "ea", "cost": 3.50 },
+    "outlet_afci": { "unit": "ea", "cost": 22.00 },
+    "outlet_nema_14_50": { "unit": "ea", "cost": 15.00 },
+    "switch_occupancy": { "unit": "ea", "cost": 22.00 },
+    "under_cabinet_light": { "unit": "ea", "cost": 35.00 }
   },
   "plumbing": {
     "toilet_builder": { "unit": "ea", "cost": 175.00 },
@@ -255,7 +321,26 @@
     "p_trap": { "unit": "ea", "cost": 8.50 },
     "wax_ring": { "unit": "ea", "cost": 5.50 },
     "pex_fittings_assorted": { "unit": "ea", "cost": 3.50 },
-    "pvc_fittings_assorted": { "unit": "ea", "cost": 2.75 }
+    "pvc_fittings_assorted": { "unit": "ea", "cost": 2.75 },
+    "faucet_tub_shower": { "unit": "ea", "cost": 145.00 },
+    "water_heater_heat_pump": { "unit": "ea", "cost": 1800.00 },
+    "pex_crimp_rings": { "unit": "bag", "cost": 8.00 },
+    "copper_fittings_assorted": { "unit": "ea", "cost": 3.50 },
+    "solder_flux_kit": { "unit": "set", "cost": 25.00 },
+    "abs_2_drain": { "unit": "lf", "cost": 2.50 },
+    "abs_3_drain": { "unit": "lf", "cost": 3.75 },
+    "abs_4_drain": { "unit": "lf", "cost": 5.50 },
+    "abs_fittings_assorted": { "unit": "ea", "cost": 3.00 },
+    "roof_vent_flashing": { "unit": "ea", "cost": 15.00 },
+    "cleanout_plug": { "unit": "ea", "cost": 8.00 },
+    "pvc_cement_primer": { "unit": "set", "cost": 12.00 },
+    "csst_gas_line": { "unit": "lf", "cost": 5.00 },
+    "gas_shutoff_valve": { "unit": "ea", "cost": 15.00 },
+    "sump_pump": { "unit": "ea", "cost": 200.00 },
+    "water_softener": { "unit": "ea", "cost": 500.00 },
+    "recirc_pump": { "unit": "ea", "cost": 200.00 },
+    "pipe_hanger": { "unit": "ea", "cost": 1.00 },
+    "teflon_tape": { "unit": "roll", "cost": 2.00 }
   },
   "exterior": {
     "siding_vinyl": { "unit": "sf", "cost": 2.50 },
@@ -274,7 +359,13 @@
     "caulk_exterior": { "unit": "tube", "cost": 6.50 },
     "flashing_z_bar": { "unit": "ea", "cost": 12.00, "coverage_note": "10 ft piece" },
     "brick_veneer": { "unit": "sf", "cost": 12.50 },
-    "stone_veneer": { "unit": "sf", "cost": 18.00 }
+    "stone_veneer": { "unit": "sf", "cost": 18.00 },
+    "siding_wood_shingle": { "unit": "sf", "cost": 7.50 },
+    "siding_metal_panel": { "unit": "sf", "cost": 5.50 },
+    "vinyl_starter_strip": { "unit": "ea", "cost": 5.00, "coverage_note": "12 ft piece" },
+    "vinyl_j_channel": { "unit": "ea", "cost": 4.00, "coverage_note": "12 ft piece" },
+    "trim_1x4_8ft": { "unit": "ea", "cost": 8.00 },
+    "paint_exterior_semi_gloss": { "unit": "gal", "cost": 50.00, "coverage_note": "covers ~350 sf" }
   },
   "interior_finishes": {
     "interior_paint": { "unit": "gal", "cost": 38.00, "coverage_note": "covers ~350 sf" },
@@ -302,6 +393,13 @@
     "interior_door_solid_core": { "unit": "ea", "cost": 145.00 },
     "door_hardware_passage": { "unit": "set", "cost": 18.00 },
     "door_hardware_privacy": { "unit": "set", "cost": 22.00 },
-    "door_hardware_entry": { "unit": "set", "cost": 85.00 }
+    "door_hardware_entry": { "unit": "set", "cost": 85.00 },
+    "paint_ceiling_flat": { "unit": "gal", "cost": 30.00, "coverage_note": "covers ~350 sf" },
+    "paint_supplies_kit": { "unit": "set", "cost": 25.00 },
+    "painters_tape": { "unit": "roll", "cost": 6.00 },
+    "drop_cloth": { "unit": "ea", "cost": 10.00 },
+    "finish_nails_18ga": { "unit": "box", "cost": 12.00 },
+    "paint_semi_gloss": { "unit": "gal", "cost": 40.00, "coverage_note": "covers ~350 sf" },
+    "tack_strip": { "unit": "ea", "cost": 1.50, "coverage_note": "4 ft piece" }
   }
 }

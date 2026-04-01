@@ -42,7 +42,7 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
     if equip == "furnace_ac":
         items.append(_item(
             "Equipment", f"Gas furnace {hvac.heating_btu // 1000}K BTU",
-            1, "ea", _lookup_cost(costs, "hvac", "furnace_gas_80k"),
+            1, "ea", _lookup_cost(costs, "hvac", "furnace_80k_btu"),
             8.0, rate,
         ))
         tons = hvac.cooling_tons
@@ -73,12 +73,12 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
         heads = max(1, hvac.num_zones)
         items.append(_item(
             "Equipment", f"Mini-split condenser ({heads}-zone)",
-            1, "ea", _lookup_cost(costs, "hvac", "mini_split_condenser", 2000),
+            1, "ea", _lookup_cost(costs, "hvac", "mini_split_12k", 2000),
             6.0, rate,
         ))
         items.append(_item(
             "Equipment", "Mini-split wall head units",
-            heads, "ea", _lookup_cost(costs, "hvac", "mini_split_head", 800),
+            heads, "ea", _lookup_cost(costs, "hvac", "mini_split_12k", 800),
             heads * 4.0, rate,
         ))
 
@@ -95,7 +95,7 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
         lf = dr.length
         total_duct_lf += lf
         mat = dr.material
-        key = "duct_flex_6in" if "flex" in mat else "duct_sheet_metal_6x10"
+        key = "duct_flex_6in" if "flex" in mat else "duct_sheet_metal_6in"
         items.append(_item(
             "Ductwork", f"{dr.duct_type.title()} duct {dr.size} ({mat})",
             math.ceil(lf), "lf", _lookup_cost(costs, "hvac", key),
@@ -107,7 +107,7 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
         rolls = math.ceil(total_duct_lf / 50)
         items.append(_item(
             "Ductwork", "Duct mastic/sealant",
-            rolls, "ea", _lookup_cost(costs, "hvac", "duct_mastic_gal", 15),
+            rolls, "ea", _lookup_cost(costs, "hvac", "duct_mastic", 15),
             rolls * 0.5, rate,
         ))
 
@@ -115,7 +115,7 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Ductwork", "Duct insulation wrap",
             math.ceil(total_duct_lf * 0.75), "lf",
-            _lookup_cost(costs, "hvac", "duct_insulation_wrap_lf", 1.50),
+            _lookup_cost(costs, "hvac", "duct_insulation", 1.50),
             total_duct_lf * 0.05, rate,
         ))
 
@@ -131,14 +131,14 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
     for reg in hvac.supply_registers:
         items.append(_item(
             "Registers", f"Supply register {reg.size} ({reg.style})",
-            reg.quantity, "ea", _lookup_cost(costs, "hvac", "register_supply_4x10"),
+            reg.quantity, "ea", _lookup_cost(costs, "hvac", "supply_register_4x10"),
             reg.quantity * 0.25, rate,
         ))
 
     for gr in hvac.return_grilles:
         items.append(_item(
             "Grilles", f"Return grille {gr.size} ({gr.style})",
-            gr.quantity, "ea", _lookup_cost(costs, "hvac", "grille_return_14x20"),
+            gr.quantity, "ea", _lookup_cost(costs, "hvac", "return_grille_20x20"),
             gr.quantity * 0.25, rate,
         ))
 
@@ -154,7 +154,7 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
     # --- Controls ---
     items.append(_item(
         "Controls", "Programmable thermostat",
-        hvac.thermostats, "ea", _lookup_cost(costs, "hvac", "thermostat_programmable"),
+        hvac.thermostats, "ea", _lookup_cost(costs, "hvac", "thermostat_standard"),
         hvac.thermostats * 1.0, rate,
     ))
 
@@ -175,7 +175,7 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Refrigerant", "Line set (25 ft pre-charged)",
             hvac.refrigerant_line_sets, "set",
-            _lookup_cost(costs, "hvac", "line_set_25ft", 80),
+            _lookup_cost(costs, "hvac", "refrigerant_line_set", 80),
             hvac.refrigerant_line_sets * 2.0, rate,
         ))
 
@@ -200,7 +200,7 @@ def calculate_hvac(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Exhaust", "Exhaust vent ducting (4\" flex, 15 ft)",
             hvac.exhaust_fans, "ea",
-            _lookup_cost(costs, "hvac", "duct_flex_4in_25ft", 25) * 0.6,
+            _lookup_cost(costs, "hvac", "duct_flex_4in", 25) * 0.6,
             hvac.exhaust_fans * 0.5, rate,
         ))
         # Roof/wall caps

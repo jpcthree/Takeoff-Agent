@@ -42,11 +42,11 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     rate = _labor_rate(costs)
 
     # --- Panel ---
-    panel_key = f"panel_{elec.panel_main_amps}a"
+    panel_key = f"panel_{elec.panel_main_amps}amp"
     items.append(_item(
         "Panel", f"Main panel {elec.panel_main_amps}A",
         1, "ea", _lookup_cost(costs, "electrical", panel_key,
-                               _lookup_cost(costs, "electrical", "panel_200a", 250)),
+                               _lookup_cost(costs, "electrical", "panel_200amp", 250)),
         8.0, rate,
     ))
 
@@ -55,7 +55,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
         items.append(_item(
             "Panel", f"Sub-panel {elec.sub_panel_amps}A",
             elec.panel_sub, "ea",
-            _lookup_cost(costs, "electrical", "panel_100a_sub", 150),
+            _lookup_cost(costs, "electrical", "panel_100amp_sub", 150),
             elec.panel_sub * 4.0, rate,
         ))
 
@@ -79,7 +79,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     ))
     items.append(_item(
         "Grounding", "#4 bare copper ground wire (25 ft)",
-        1, "ea", _lookup_cost(costs, "electrical", "ground_wire_4_25ft", 40),
+        1, "ea", _lookup_cost(costs, "electrical", "ground_wire_6awg", 40),
         0.5, rate,
     ))
 
@@ -89,13 +89,13 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
         breaker_counts[circuit.breaker_type] += 1
 
     breaker_key_map = {
-        "standard": "breaker_20a_standard",
-        "afci": "breaker_20a_afci",
-        "gfci": "breaker_20a_gfci",
-        "dual_function": "breaker_20a_dual_function",
+        "standard": "breaker_20a",
+        "afci": "breaker_afci_20a",
+        "gfci": "breaker_gfci_20a",
+        "dual_function": "breaker_dual_function_20a",
     }
     for btype, count in breaker_counts.items():
-        key = breaker_key_map.get(btype, "breaker_20a_standard")
+        key = breaker_key_map.get(btype, "breaker_20a")
         items.append(_item(
             "Breakers", f"{btype.replace('_', ' ').title()} breaker",
             count, "ea", _lookup_cost(costs, "electrical", key),
@@ -108,12 +108,12 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
         wire_totals[circuit.wire_gauge] += circuit.estimated_length
 
     wire_key_map = {
-        "14/2": "wire_14_2_250ft",
-        "12/2": "wire_12_2_250ft",
-        "10/2": "wire_10_2_100ft",
-        "10/3": "wire_10_3_100ft",
-        "8/3": "wire_8_3_50ft",
-        "6/3": "wire_6_3_50ft",
+        "14/2": "wire_14_2_nm",
+        "12/2": "wire_12_2_nm",
+        "10/2": "wire_10_2_nm",
+        "10/3": "wire_10_3_nm",
+        "8/3": "wire_8_3_nm",
+        "6/3": "wire_6_3_nm",
     }
     wire_roll_size = {
         "14/2": 250, "12/2": 250, "10/2": 100, "10/3": 100, "8/3": 50, "6/3": 50,
@@ -122,10 +122,10 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
         total_ft *= WASTE_WIRE
         roll_size = wire_roll_size.get(gauge, 250)
         rolls = math.ceil(total_ft / roll_size)
-        key = wire_key_map.get(gauge, "wire_12_2_250ft")
+        key = wire_key_map.get(gauge, "wire_12_2_nm")
         items.append(_item(
             "Wire", f"NM-B {gauge} ({roll_size} ft roll)",
-            rolls, "roll", _lookup_cost(costs, "electrical", key),
+            rolls, "roll", _lookup_cost(costs, "electrical", key) * roll_size,
             total_ft * 0.02, rate,  # pulling wire labor
         ))
 
@@ -134,7 +134,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     staple_boxes = math.ceil(total_wire_ft / 250)
     items.append(_item(
         "Fasteners", "Wire staples (box)",
-        staple_boxes, "box", _lookup_cost(costs, "electrical", "wire_staples_box", 5),
+        staple_boxes, "box", _lookup_cost(costs, "electrical", "wire_staples", 5),
         0, rate,
     ))
 
@@ -142,7 +142,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     wire_nut_bags = math.ceil(len(elec.circuits) / 10)
     items.append(_item(
         "Fasteners", "Wire nut assortment (bag)",
-        wire_nut_bags, "bag", _lookup_cost(costs, "electrical", "wire_nuts_bag", 8),
+        wire_nut_bags, "bag", _lookup_cost(costs, "electrical", "wire_nuts_assorted", 8),
         0, rate,
     ))
 
@@ -155,7 +155,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     device_boxes = total_outlet_locations + total_switch_locations
     items.append(_item(
         "Boxes", "1-gang device box (plastic)",
-        device_boxes, "ea", _lookup_cost(costs, "electrical", "box_1gang_plastic", 0.50),
+        device_boxes, "ea", _lookup_cost(costs, "electrical", "box_single_gang", 0.50),
         device_boxes * 0.1, rate,
     ))
 
@@ -163,7 +163,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     items.append(_item(
         "Boxes", "Ceiling box (round/octagon)",
         total_fixture_locations, "ea",
-        _lookup_cost(costs, "electrical", "box_ceiling_round", 1.50),
+        _lookup_cost(costs, "electrical", "box_round_ceiling", 1.50),
         total_fixture_locations * 0.1, rate,
     ))
 
@@ -178,7 +178,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     # --- Devices ---
     device_key_map = {
         "standard_outlet": "outlet_standard_15a",
-        "gfci_outlet": "outlet_gfci",
+        "gfci_outlet": "outlet_gfci_20a",
         "afci_outlet": "outlet_afci",
         "dedicated_outlet": "outlet_standard_20a",
         "usb_outlet": "outlet_usb",
@@ -201,22 +201,22 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     total_devices = total_outlet_locations + total_switch_locations
     items.append(_item(
         "Devices", "Cover plates (assorted)",
-        total_devices, "ea", _lookup_cost(costs, "electrical", "cover_plate", 0.75),
+        total_devices, "ea", _lookup_cost(costs, "electrical", "cover_plate_single", 0.75),
         0, rate,
     ))
 
     # --- Fixtures ---
     fixture_key_map = {
-        "recessed_4in": "fixture_recessed_4in",
-        "recessed_6in": "fixture_recessed_6in",
-        "flush_mount": "fixture_flush_mount",
-        "pendant": "fixture_pendant",
-        "vanity_bar": "fixture_vanity_bar",
-        "under_cabinet": "fixture_under_cabinet",
-        "exterior_wall": "fixture_exterior_wall",
+        "recessed_4in": "recessed_light_4in",
+        "recessed_6in": "recessed_light_6in",
+        "flush_mount": "flush_mount_fixture",
+        "pendant": "pendant_fixture",
+        "vanity_bar": "vanity_light_2bulb",
+        "under_cabinet": "under_cabinet_light",
+        "exterior_wall": "exterior_wall_fixture",
     }
     for fix in elec.fixtures:
-        key = fixture_key_map.get(fix.fixture_type, "fixture_recessed_6in")
+        key = fixture_key_map.get(fix.fixture_type, "recessed_light_6in")
         items.append(_item(
             "Fixtures", f"{fix.fixture_type.replace('_', ' ').title()} - {fix.location}",
             fix.quantity, "ea", _lookup_cost(costs, "electrical", key),
@@ -243,7 +243,7 @@ def calculate_electrical(building: BuildingModel, costs: dict) -> list[LineItem]
     if elec.doorbell:
         items.append(_item(
             "Misc", "Doorbell (wired)",
-            1, "ea", _lookup_cost(costs, "electrical", "doorbell_wired", 30),
+            1, "ea", _lookup_cost(costs, "electrical", "doorbell_standard", 30),
             0.5, rate,
         ))
 

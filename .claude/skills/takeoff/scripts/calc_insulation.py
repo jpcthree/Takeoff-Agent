@@ -24,7 +24,7 @@ def _lookup_cost(costs: dict, section: str, key: str, fallback: float = 0.0) -> 
 
 
 def _labor_rate(costs: dict) -> float:
-    return costs.get("labor_rates", {}).get("insulation_installer", 30.0)
+    return costs.get("labor_rates", {}).get("insulation_installer", 28.0)
 
 
 def _item(category, desc, qty, unit, unit_cost, labor_hrs, labor_rate) -> LineItem:
@@ -190,7 +190,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 net * 0.025, rate,
             ))
         else:  # fiberglass_batt
-            r_val = getattr(wall, "sound_insulation_r_value", 13) if 'wall' in dir() else 13
+            r_val = 13  # default R-value for sound insulation fiberglass batt
             cost_key = _batt_cost_key(r_val, thickness)
             sf = round(net * WASTE_BATT, 2)
             items.append(_item(

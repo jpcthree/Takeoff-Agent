@@ -77,7 +77,7 @@ def _lookup_cost(costs: dict, section: str, key: str, fallback: float = 0.0) -> 
 
 
 def _labor_rate(costs: dict) -> float:
-    return costs.get("labor_rates", {}).get("drywall_finisher", 35.0)
+    return costs.get("labor_rates", {}).get("drywall_finisher", 32.0)
 
 
 def _item(category, desc, qty, unit, unit_cost, labor_hrs, labor_rate,

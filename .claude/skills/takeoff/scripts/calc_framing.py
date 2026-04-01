@@ -48,15 +48,15 @@ def _wall_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
             continue
 
         is_2x6 = "2x6" in wall.thickness
-        plate_key = "plate_2x6_10" if is_2x6 else "plate_2x4_10"
-        stud_key = "stud_2x6_92" if is_2x6 else "stud_2x4_92"
+        plate_key = "plate_2x6" if is_2x6 else "plate_2x4"
+        stud_key = "stud_2x6_8ft" if is_2x6 else "stud_2x4_8ft"
         plate_len = 10.0  # 10' plates
 
         # Bottom plate: 1x length
         plate_count = math.ceil(length_ft / plate_len) * WASTE_LUMBER
         items.append(_item(
             "Wall Plates", f"Bottom plate {wall.thickness} - {wall.id}",
-            plate_count, "ea", _lookup_cost(costs, "framing", plate_key),
+            plate_count, "ea", _lookup_cost(costs, "framing", plate_key) * plate_len,
             plate_count * 0.1, rate,
         ))
 
@@ -64,7 +64,7 @@ def _wall_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
         top_plate_count = math.ceil(length_ft * 2 / plate_len) * WASTE_LUMBER
         items.append(_item(
             "Wall Plates", f"Double top plate {wall.thickness} - {wall.id}",
-            top_plate_count, "ea", _lookup_cost(costs, "framing", plate_key),
+            top_plate_count, "ea", _lookup_cost(costs, "framing", plate_key) * plate_len,
             top_plate_count * 0.1, rate,
         ))
 
@@ -138,7 +138,7 @@ def _floor_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
         rim_pieces = math.ceil(perim / 16) * WASTE_LUMBER  # 16' lengths
         items.append(_item(
             "Floor Framing", f"Rim joist 2x10x16 - Floor {floor_num}",
-            rim_pieces, "ea", _lookup_cost(costs, "framing", "joist_2x10_16"),
+            rim_pieces, "ea", _lookup_cost(costs, "framing", "floor_joist_2x10") * 16,  # per-lf cost * 16' length
             rim_pieces * 0.15, rate,
         ))
 
@@ -147,7 +147,7 @@ def _floor_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
         joist_count = math.ceil(joist_count * WASTE_LUMBER)
         items.append(_item(
             "Floor Framing", f"Floor joists 2x10x16 - Floor {floor_num}",
-            joist_count, "ea", _lookup_cost(costs, "framing", "joist_2x10_16"),
+            joist_count, "ea", _lookup_cost(costs, "framing", "floor_joist_2x10") * 16,  # per-lf cost * 16' length
             joist_count * 0.15, rate,
         ))
 
@@ -158,7 +158,7 @@ def _floor_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Floor Framing", f"Blocking 2x10 - Floor {floor_num}",
             math.ceil(block_pieces * 0.1), "ea",
-            _lookup_cost(costs, "framing", "joist_2x10_16") * 0.25,
+            _lookup_cost(costs, "framing", "floor_joist_2x10") * 0.25,
             block_pieces * 0.05, rate,
         ))
 
@@ -166,7 +166,7 @@ def _floor_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
         sheets = math.ceil(floor_area / 32) * WASTE_SHEATHING
         items.append(_item(
             "Floor Sheathing", f"3/4\" T&G plywood - Floor {floor_num}",
-            sheets, "sheet", _lookup_cost(costs, "framing", "sheathing_plywood_3_4"),
+            sheets, "sheet", _lookup_cost(costs, "framing", "plywood_3_4_tg"),
             sheets * 0.03, rate,
         ))
 
@@ -203,7 +203,7 @@ def _roof_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
 
             items.append(_item(
                 "Roof Framing", f"Rafters/trusses 2x8 - {rs.id}",
-                rafter_count, "ea", _lookup_cost(costs, "framing", "rafter_2x8_16"),
+                rafter_count, "ea", _lookup_cost(costs, "framing", "rafter_2x8") * 16,  # per-lf cost * 16' length
                 rafter_count * 0.3, rate,
             ))
 
@@ -220,7 +220,7 @@ def _roof_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
             ridge_pieces = math.ceil(rs.ridge_length / 16) * WASTE_LUMBER
             items.append(_item(
                 "Roof Framing", f"Ridge board 2x10 - {rs.id}",
-                ridge_pieces, "ea", _lookup_cost(costs, "framing", "joist_2x10_16"),
+                ridge_pieces, "ea", _lookup_cost(costs, "framing", "floor_joist_2x10") * 16,  # per-lf cost * 16' length
                 ridge_pieces * 0.3, rate,
             ))
 
@@ -228,7 +228,7 @@ def _roof_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
             collar_count = math.ceil(rs.ridge_length / 4) * WASTE_LUMBER
             items.append(_item(
                 "Roof Framing", f"Collar ties 2x4 - {rs.id}",
-                collar_count, "ea", _lookup_cost(costs, "framing", "stud_2x4_92"),
+                collar_count, "ea", _lookup_cost(costs, "framing", "stud_2x4_8ft"),
                 collar_count * 0.1, rate,
             ))
 
@@ -236,7 +236,7 @@ def _roof_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
         sheets = math.ceil(area / 32) * WASTE_SHEATHING
         items.append(_item(
             "Roof Sheathing", f"OSB 7/16\" sheathing - {rs.id}",
-            sheets, "sheet", _lookup_cost(costs, "framing", "sheathing_osb_7_16"),
+            sheets, "sheet", _lookup_cost(costs, "framing", "osb_7_16"),
             sheets * 0.03, rate,
         ))
 
@@ -248,7 +248,7 @@ def _roof_framing(building: BuildingModel, costs: dict) -> list[LineItem]:
         joist_count = math.ceil(joist_count * WASTE_LUMBER)
         items.append(_item(
             "Ceiling Framing", "Ceiling joists 2x6x16",
-            joist_count, "ea", _lookup_cost(costs, "framing", "joist_2x6_16", 8.0),
+            joist_count, "ea", _lookup_cost(costs, "framing", "ceiling_joist_2x6", 8.0) * 16,  # per-lf cost * 16' length
             joist_count * 0.15, rate,
         ))
 
@@ -270,7 +270,7 @@ def _wall_sheathing(building: BuildingModel, costs: dict) -> list[LineItem]:
     sheets = math.ceil(ext_area / 32) * WASTE_SHEATHING
     items.append(_item(
         "Wall Sheathing", "OSB 7/16\" wall sheathing",
-        sheets, "sheet", _lookup_cost(costs, "framing", "sheathing_osb_7_16"),
+        sheets, "sheet", _lookup_cost(costs, "framing", "osb_7_16"),
         sheets * 0.03, rate,
     ))
 
@@ -290,7 +290,7 @@ def _fasteners(building: BuildingModel, costs: dict) -> list[LineItem]:
 
     items.append(_item(
         "Fasteners", "16d framing nails",
-        nail_lbs, "lb", _lookup_cost(costs, "framing", "nails_16d_sinker", 0.08),
+        nail_lbs, "lb", _lookup_cost(costs, "framing", "nails_framing_16d", 0.08),
         0, rate,
     ))
 

@@ -43,14 +43,14 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
 
     # --- Fixtures ---
     fixture_key_map = {
-        "toilet": ("fixture_toilet", 2.0),
-        "lavatory": ("fixture_lavatory", 3.0),
-        "kitchen_sink": ("fixture_kitchen_sink", 3.0),
-        "bathtub": ("fixture_bathtub", 4.0),
-        "shower": ("fixture_shower_base", 4.0),
-        "tub_shower_combo": ("fixture_bathtub", 4.5),
-        "utility_sink": ("fixture_utility_sink", 2.0),
-        "wet_bar_sink": ("fixture_lavatory", 2.5),
+        "toilet": ("toilet_mid", 2.0),
+        "lavatory": ("lavatory_mid", 3.0),
+        "kitchen_sink": ("kitchen_sink_stainless_double", 3.0),
+        "bathtub": ("bathtub_standard", 4.0),
+        "shower": ("shower_base_48", 4.0),
+        "tub_shower_combo": ("tub_shower_combo", 4.5),
+        "utility_sink": ("utility_sink", 2.0),
+        "wet_bar_sink": ("lavatory_mid", 2.5),
     }
 
     for fix in plumb.fixtures:
@@ -63,7 +63,7 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
 
         # Faucets (not for toilets)
         if fix.fixture_type != "toilet":
-            faucet_key = "faucet_kitchen" if "kitchen" in fix.fixture_type else "faucet_lavatory"
+            faucet_key = "faucet_kitchen_mid" if "kitchen" in fix.fixture_type else "faucet_lavatory_mid"
             if "tub" in fix.fixture_type or "shower" in fix.fixture_type:
                 faucet_key = "faucet_tub_shower"
             items.append(_item(
@@ -77,19 +77,19 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
     if non_toilet > 0:
         items.append(_item(
             "Fittings", "P-trap (1-1/2\" PVC)",
-            non_toilet, "ea", _lookup_cost(costs, "plumbing", "p_trap_1_5", 5),
+            non_toilet, "ea", _lookup_cost(costs, "plumbing", "p_trap", 5),
             0, rate,  # labor in fixture install
         ))
 
     # --- Water Heater ---
     wh_key_map = {
-        "tank_gas": "water_heater_tank_gas_50",
-        "tank_electric": "water_heater_tank_electric_50",
+        "tank_gas": "water_heater_tank_gas_50gal",
+        "tank_electric": "water_heater_tank_electric_50gal",
         "tankless_gas": "water_heater_tankless_gas",
         "tankless_electric": "water_heater_tankless_electric",
         "heat_pump_hybrid": "water_heater_heat_pump",
     }
-    wh_key = wh_key_map.get(plumb.water_heater_type, "water_heater_tank_gas_50")
+    wh_key = wh_key_map.get(plumb.water_heater_type, "water_heater_tank_gas_50gal")
     items.append(_item(
         "Water Heater",
         f"Water heater ({plumb.water_heater_type.replace('_', ' ')}, {plumb.water_heater_gallons} gal)",
@@ -109,26 +109,26 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
             rolls_3q = math.ceil(three_quarter_ft / 100 * WASTE_PIPE)
             items.append(_item(
                 "Supply", '1/2" PEX (100 ft roll)',
-                rolls_half, "roll", _lookup_cost(costs, "plumbing", "pex_half_100ft"),
+                rolls_half, "roll", _lookup_cost(costs, "plumbing", "pex_1_2") * 100,
                 half_ft * 0.08, rate,
             ))
             items.append(_item(
                 "Supply", '3/4" PEX (100 ft roll)',
-                rolls_3q, "roll", _lookup_cost(costs, "plumbing", "pex_3_4_100ft"),
+                rolls_3q, "roll", _lookup_cost(costs, "plumbing", "pex_3_4") * 100,
                 three_quarter_ft * 0.10, rate,
             ))
             # PEX fittings
             fittings = math.ceil(supply_ft / 10 * WASTE_FITTINGS)
             items.append(_item(
                 "Fittings", "PEX crimp fittings (assorted)",
-                fittings, "ea", _lookup_cost(costs, "plumbing", "pex_fitting", 2),
+                fittings, "ea", _lookup_cost(costs, "plumbing", "pex_fittings_assorted", 2),
                 fittings * 0.05, rate,
             ))
             # PEX crimp rings
             items.append(_item(
                 "Fittings", "PEX crimp rings (bag)",
                 math.ceil(fittings / 50), "bag",
-                _lookup_cost(costs, "plumbing", "pex_crimp_rings_bag", 8),
+                _lookup_cost(costs, "plumbing", "pex_crimp_rings", 8),
                 0, rate,
             ))
         elif supply_type == "copper":
@@ -136,19 +136,19 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "Supply", '1/2" copper pipe (10 ft stick)',
                 math.ceil(sticks * 0.7), "ea",
-                _lookup_cost(costs, "plumbing", "copper_half_10ft"),
+                _lookup_cost(costs, "plumbing", "copper_1_2") * 10,
                 supply_ft * 0.7 * 0.15, rate,
             ))
             items.append(_item(
                 "Supply", '3/4" copper pipe (10 ft stick)',
                 math.ceil(sticks * 0.3), "ea",
-                _lookup_cost(costs, "plumbing", "copper_3_4_10ft"),
+                _lookup_cost(costs, "plumbing", "copper_3_4") * 10,
                 supply_ft * 0.3 * 0.18, rate,
             ))
             fittings = math.ceil(supply_ft / 5 * WASTE_FITTINGS)
             items.append(_item(
                 "Fittings", "Copper fittings (elbows, tees, couplings)",
-                fittings, "ea", _lookup_cost(costs, "plumbing", "copper_fitting", 3),
+                fittings, "ea", _lookup_cost(costs, "plumbing", "copper_fittings_assorted", 3),
                 fittings * 0.1, rate,
             ))
             # Solder and flux
@@ -163,7 +163,7 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
     valves = total_fixtures * 2 + 1
     items.append(_item(
         "Valves", "Quarter-turn shut-off valves",
-        valves, "ea", _lookup_cost(costs, "plumbing", "shutoff_valve_quarter_turn", 8),
+        valves, "ea", _lookup_cost(costs, "plumbing", "shut_off_valve", 8),
         valves * 0.2, rate,
     ))
 
@@ -177,19 +177,19 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "DWV", f'3" {drain_type.upper()} drain pipe',
             math.ceil(drain_ft * 0.5 / 10 * WASTE_PIPE), "ea",
-            _lookup_cost(costs, "plumbing", f"{drain_type}_3in_10ft", 12),
+            _lookup_cost(costs, "plumbing", f"{drain_type}_3_drain", 12) * 10,
             drain_ft * 0.5 * 0.15, rate,
         ))
         items.append(_item(
             "DWV", f'4" {drain_type.upper()} drain pipe (main)',
             math.ceil(drain_ft * 0.3 / 10 * WASTE_PIPE), "ea",
-            _lookup_cost(costs, "plumbing", f"{drain_type}_4in_10ft", 18),
+            _lookup_cost(costs, "plumbing", f"{drain_type}_4_drain", 18) * 10,
             drain_ft * 0.3 * 0.18, rate,
         ))
         items.append(_item(
             "DWV", f'2" {drain_type.upper()} drain pipe (branch)',
             math.ceil(drain_ft * 0.2 / 10 * WASTE_PIPE), "ea",
-            _lookup_cost(costs, "plumbing", f"{drain_type}_2in_10ft", 8),
+            _lookup_cost(costs, "plumbing", f"{drain_type}_2_drain", 8) * 10,
             drain_ft * 0.2 * 0.12, rate,
         ))
         # DWV fittings
@@ -197,7 +197,7 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Fittings", f"{drain_type.upper()} DWV fittings (assorted)",
             dwv_fittings, "ea",
-            _lookup_cost(costs, "plumbing", f"{drain_type}_fitting", 4),
+            _lookup_cost(costs, "plumbing", f"{drain_type}_fittings_assorted", 4),
             dwv_fittings * 0.08, rate,
         ))
 
@@ -205,7 +205,7 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "DWV", '2" PVC vent pipe',
             math.ceil(vent_ft / 10 * WASTE_PIPE), "ea",
-            _lookup_cost(costs, "plumbing", "pvc_2in_10ft", 8),
+            _lookup_cost(costs, "plumbing", "pvc_2_vent", 8) * 10,
             vent_ft * 0.10, rate,
         ))
         items.append(_item(
@@ -236,7 +236,7 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Gas", "CSST flex gas line (per ft)",
             math.ceil(plumb.gas_line_feet * WASTE_PIPE), "lf",
-            _lookup_cost(costs, "plumbing", "csst_gas_line_lf", 5),
+            _lookup_cost(costs, "plumbing", "csst_gas_line", 5),
             plumb.gas_line_feet * 0.15, rate,
         ))
         # Gas shutoff valves (estimate 2-3 appliances)
@@ -253,7 +253,7 @@ def calculate_plumbing(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Exterior", "Frost-free hose bib",
             plumb.hose_bibs, "ea",
-            _lookup_cost(costs, "plumbing", "hose_bib_frost_free", 25),
+            _lookup_cost(costs, "plumbing", "hose_bib", 25),
             plumb.hose_bibs * 1.0, rate,
         ))
 

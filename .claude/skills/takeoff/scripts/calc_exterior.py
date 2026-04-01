@@ -19,7 +19,7 @@ def _lookup_cost(costs: dict, section: str, key: str, fallback: float = 0.0) -> 
 
 
 def _labor_rate(costs: dict) -> float:
-    return costs.get("labor_rates", {}).get("siding_installer", 35.0)
+    return costs.get("labor_rates", {}).get("siding_installer", 32.0)
 
 
 def _item(category, desc, qty, unit, unit_cost, labor_hrs, labor_rate) -> LineItem:
@@ -44,8 +44,8 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
     siding = building.siding_type
     if siding != "none" and net_ext_area > 0:
         siding_key_map = {
-            "vinyl": "siding_vinyl_sq",
-            "fiber_cement": "siding_fiber_cement_plank",
+            "vinyl": "siding_vinyl",
+            "fiber_cement": "siding_fiber_cement",
             "wood_clapboard": "siding_wood_clapboard",
             "wood_shingle": "siding_wood_shingle",
             "metal": "siding_metal_panel",
@@ -55,7 +55,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
             squares = math.ceil(net_ext_area / 100) * WASTE_SIDING
             items.append(_item(
                 "Siding", "Vinyl siding (per square)",
-                squares, "sq", _lookup_cost(costs, "exterior", "siding_vinyl_sq"),
+                squares, "sq", _lookup_cost(costs, "exterior", "siding_vinyl") * 100,
                 net_ext_area * 0.04, rate,
             ))
             # Starter strip, J-channel, utility trim
@@ -83,7 +83,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "Siding", "Fiber cement plank (12 ft)",
                 planks, "ea",
-                _lookup_cost(costs, "exterior", siding_key_map.get(siding, "siding_fiber_cement_plank")),
+                _lookup_cost(costs, "exterior", "siding_fiber_cement") * 7.5,
                 net_ext_area * 0.06, rate,
             ))
 
@@ -92,7 +92,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
             squares = math.ceil(net_ext_area / 100) * WASTE_SIDING
             items.append(_item(
                 "Siding", f"{siding.replace('_', ' ').title()} (per square)",
-                squares, "sq", _lookup_cost(costs, "exterior", key),
+                squares, "sq", _lookup_cost(costs, "exterior", key) * 100,
                 net_ext_area * 0.08, rate,
             ))
 
@@ -101,7 +101,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
             panels = math.ceil(net_ext_area / 36) * WASTE_SIDING  # ~36 sqft per panel
             items.append(_item(
                 "Siding", "Metal siding panel",
-                panels, "ea", _lookup_cost(costs, "exterior", "siding_metal_panel"),
+                panels, "ea", _lookup_cost(costs, "exterior", "siding_metal_panel") * 36,
                 net_ext_area * 0.06, rate,
             ))
 
@@ -110,7 +110,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Masonry", f"{siding.title()} veneer",
             math.ceil(net_ext_area * WASTE_SIDING), "sf",
-            _lookup_cost(costs, "exterior", f"veneer_{siding}_sf", 12),
+            _lookup_cost(costs, "exterior", f"{siding}_veneer", 12),
             net_ext_area * 0.12, rate,
         ))
 
@@ -144,7 +144,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Fascia", "Fascia board 1x8x16",
             fascia_pieces, "ea",
-            _lookup_cost(costs, "exterior", "fascia_1x8_16ft", 18),
+            _lookup_cost(costs, "exterior", "fascia_aluminum", 1.125) * 16,
             building.fascia_perimeter * 0.08, rate,
         ))
 
@@ -156,7 +156,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Soffit", "Vented soffit panel (12 ft)",
             panels, "ea",
-            _lookup_cost(costs, "exterior", "soffit_vinyl_vented_12ft", 12),
+            _lookup_cost(costs, "exterior", "soffit_vinyl", 1.0) * 12,
             soffit_sqft * 0.06, rate,
         ))
 
@@ -168,7 +168,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Paint", "Exterior primer (gallon)",
             primer_gal, "gal",
-            _lookup_cost(costs, "exterior", "paint_exterior_primer_gal", 35),
+            _lookup_cost(costs, "exterior", "exterior_primer", 35),
             net_ext_area * 0.01, rate,
         ))
         # Paint (2 coats)
@@ -176,7 +176,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "Paint", "Exterior paint (gallon)",
             paint_gal, "gal",
-            _lookup_cost(costs, "exterior", "paint_exterior_satin_gal", 45),
+            _lookup_cost(costs, "exterior", "exterior_paint", 45),
             net_ext_area * 2 * 0.01, rate,
         ))
 
@@ -187,7 +187,7 @@ def calculate_exterior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "Paint", "Exterior trim paint (gallon)",
                 max(1, trim_gal), "gal",
-                _lookup_cost(costs, "exterior", "paint_exterior_semi_gloss_gal", 50),
+                _lookup_cost(costs, "exterior", "paint_exterior_semi_gloss", 50),
                 trim_area * 0.02, rate,
             ))
 

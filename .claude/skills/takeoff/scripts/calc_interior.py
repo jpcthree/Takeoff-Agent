@@ -34,8 +34,8 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
     items = []
 
     painter_rate = costs.get("labor_rates", {}).get("painter", 30.0)
-    carpenter_rate = costs.get("labor_rates", {}).get("finish_carpenter", 35.0)
-    flooring_rate = costs.get("labor_rates", {}).get("flooring_installer", 30.0)
+    carpenter_rate = costs.get("labor_rates", {}).get("finish_carpenter", 40.0)
+    flooring_rate = costs.get("labor_rates", {}).get("flooring_installer", 32.0)
 
     coverage_per_gal = 350.0
 
@@ -61,7 +61,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_paint", "Paint", "Interior wall primer (gallon)",
             primer_gal, "gal",
-            _lookup_cost(costs, "interior_finishes", "paint_primer_gal", 25),
+            _lookup_cost(costs, "interior_finishes", "interior_primer", 25),
             total_wall_paint_area * 0.008, painter_rate,
         ))
 
@@ -70,7 +70,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_paint", "Paint", "Interior wall paint - eggshell (gallon)",
             paint_gal, "gal",
-            _lookup_cost(costs, "interior_finishes", "paint_interior_eggshell_gal", 35),
+            _lookup_cost(costs, "interior_finishes", "interior_paint", 35),
             total_wall_paint_area * 2 * 0.008, painter_rate,
         ))
 
@@ -80,14 +80,14 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_paint", "Paint", "Ceiling primer (gallon)",
             ceil_primer, "gal",
-            _lookup_cost(costs, "interior_finishes", "paint_primer_gal", 25),
+            _lookup_cost(costs, "interior_finishes", "interior_primer", 25),
             total_ceiling_area * 0.008, painter_rate,
         ))
         ceil_paint = math.ceil(total_ceiling_area / coverage_per_gal) * WASTE_PAINT
         items.append(_item(
             "interior_paint", "Paint", "Ceiling paint - flat white (gallon)",
             ceil_paint, "gal",
-            _lookup_cost(costs, "interior_finishes", "paint_ceiling_flat_gal", 30),
+            _lookup_cost(costs, "interior_finishes", "paint_ceiling_flat", 30),
             total_ceiling_area * 0.008, painter_rate,
         ))
 
@@ -106,7 +106,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_paint", "Supplies", "Painters tape (roll)",
             tape_rolls, "roll",
-            _lookup_cost(costs, "interior_finishes", "painters_tape_roll", 6),
+            _lookup_cost(costs, "interior_finishes", "painters_tape", 6),
             0, painter_rate,
         ))
         # Drop cloths
@@ -143,7 +143,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_trim", "Baseboard", 'Baseboard 3-1/4" MDF (16 ft)',
             pieces, "ea",
-            _lookup_cost(costs, "interior_finishes", "baseboard_3_25_mdf_16ft", 12),
+            _lookup_cost(costs, "interior_finishes", "baseboard_3_25_mdf") * 16,
             total_baseboard_lf * 0.08, carpenter_rate,
         ))
 
@@ -157,7 +157,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_trim", "Casing", 'Door/window casing 2-1/4" MDF (7 ft)',
             pieces, "ea",
-            _lookup_cost(costs, "interior_finishes", "casing_2_25_mdf_7ft", 5),
+            _lookup_cost(costs, "interior_finishes", "door_casing_2_25_mdf") * 7,
             total_casing_lf * 0.10, carpenter_rate,
         ))
 
@@ -167,7 +167,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_trim", "Crown", 'Crown molding 3-5/8" (16 ft)',
             pieces, "ea",
-            _lookup_cost(costs, "interior_finishes", "crown_3_625_16ft", 18),
+            _lookup_cost(costs, "interior_finishes", "crown_molding_3_5") * 16,
             total_crown_lf * 0.12, carpenter_rate,
         ))
 
@@ -178,7 +178,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_trim", "Fasteners", "Finish nails (18 ga, box)",
             nail_boxes, "box",
-            _lookup_cost(costs, "interior_finishes", "finish_nails_18ga_box", 12),
+            _lookup_cost(costs, "interior_finishes", "finish_nails_18ga", 12),
             0, carpenter_rate,
         ))
 
@@ -189,7 +189,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "interior_paint", "Paint", "Trim paint - semi-gloss (gallon)",
             max(1, trim_gal), "gal",
-            _lookup_cost(costs, "interior_finishes", "paint_interior_semi_gloss_gal", 40),
+            _lookup_cost(costs, "interior_finishes", "paint_semi_gloss", 40),
             trim_paint_area * 2 * 0.01, painter_rate,
         ))
 
@@ -209,7 +209,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "Hardwood", "Hardwood flooring (3/4\" solid oak)",
                 math.ceil(area * WASTE_FLOORING), "sf",
-                _lookup_cost(costs, "interior_finishes", "flooring_hardwood_oak_sf", 5),
+                _lookup_cost(costs, "interior_finishes", "hardwood_oak", 5),
                 area * 0.06, flooring_rate,
             ))
 
@@ -217,7 +217,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "Tile", "Porcelain tile (12x24)",
                 math.ceil(area * WASTE_FLOORING), "sf",
-                _lookup_cost(costs, "interior_finishes", "flooring_tile_porcelain_sf", 4),
+                _lookup_cost(costs, "interior_finishes", "tile_porcelain_12x24", 4),
                 area * 0.10, flooring_rate,
             ))
             # Thinset mortar (~50 sqft per bag)
@@ -225,7 +225,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "Tile", "Thinset mortar (50 lb bag)",
                 bags, "bag",
-                _lookup_cost(costs, "interior_finishes", "thinset_mortar_bag", 15),
+                _lookup_cost(costs, "interior_finishes", "thinset_mortar", 15),
                 0, flooring_rate,
             ))
             # Grout (~25 sqft per bag)
@@ -233,7 +233,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "Tile", "Grout (25 lb bag)",
                 grout_bags, "bag",
-                _lookup_cost(costs, "interior_finishes", "grout_bag", 12),
+                _lookup_cost(costs, "interior_finishes", "grout_sanded", 12),
                 0, flooring_rate,
             ))
 
@@ -242,14 +242,14 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "Carpet", "Carpet (mid-grade, per sq yd)",
                 sq_yards, "sy",
-                _lookup_cost(costs, "interior_finishes", "flooring_carpet_mid_sy", 25),
+                _lookup_cost(costs, "interior_finishes", "carpet_mid_grade", 25),
                 area * 0.03, flooring_rate,
             ))
             # Carpet pad
             items.append(_item(
                 "flooring", "Carpet", "Carpet pad (per sq yd)",
                 sq_yards, "sy",
-                _lookup_cost(costs, "interior_finishes", "carpet_pad_sy", 5),
+                _lookup_cost(costs, "interior_finishes", "carpet_pad", 5),
                 0, flooring_rate,
             ))
             # Tack strips
@@ -257,7 +257,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "Carpet", "Tack strip (4 ft)",
                 math.ceil(tack_lf / 4), "ea",
-                _lookup_cost(costs, "interior_finishes", "tack_strip_4ft", 1.50),
+                _lookup_cost(costs, "interior_finishes", "tack_strip", 1.50),
                 0, flooring_rate,
             ))
 
@@ -265,14 +265,14 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "LVP", "Luxury vinyl plank (per sqft)",
                 math.ceil(area * WASTE_FLOORING), "sf",
-                _lookup_cost(costs, "interior_finishes", "flooring_lvp_sf", 3.50),
+                _lookup_cost(costs, "interior_finishes", "lvp_mid_grade", 3.50),
                 area * 0.04, flooring_rate,
             ))
             # Underlayment
             items.append(_item(
                 "flooring", "LVP", "LVP underlayment (roll, 100 sqft)",
                 math.ceil(area / 100 * WASTE_FLOORING), "roll",
-                _lookup_cost(costs, "interior_finishes", "lvp_underlayment_roll", 20),
+                _lookup_cost(costs, "interior_finishes", "underlayment_flooring", 20),
                 0, flooring_rate,
             ))
 
@@ -280,13 +280,13 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
             items.append(_item(
                 "flooring", "Laminate", "Laminate flooring (per sqft)",
                 math.ceil(area * WASTE_FLOORING), "sf",
-                _lookup_cost(costs, "interior_finishes", "flooring_laminate_sf", 2.50),
+                _lookup_cost(costs, "interior_finishes", "laminate_mid_grade", 2.50),
                 area * 0.04, flooring_rate,
             ))
             items.append(_item(
                 "flooring", "Laminate", "Laminate underlayment (roll, 100 sqft)",
                 math.ceil(area / 100 * WASTE_FLOORING), "roll",
-                _lookup_cost(costs, "interior_finishes", "laminate_underlayment_roll", 15),
+                _lookup_cost(costs, "interior_finishes", "underlayment_flooring", 15),
                 0, flooring_rate,
             ))
 
@@ -301,7 +301,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         items.append(_item(
             "flooring", "Transitions", "Floor transition strip (3 ft)",
             transitions, "ea",
-            _lookup_cost(costs, "interior_finishes", "transition_strip_3ft", 12),
+            _lookup_cost(costs, "interior_finishes", "transition_strips", 12),
             transitions * 0.25, flooring_rate,
         ))
 
@@ -315,7 +315,7 @@ def calculate_interior(building: BuildingModel, costs: dict) -> list[LineItem]:
         if op.style in ("entry", "garage", "sliding_glass", "french_exterior"):
             continue
 
-        door_key = "door_interior_prehung" if "hollow" in op.material or not op.material else "door_interior_prehung"
+        door_key = "interior_door_hollow_core" if not op.material or "hollow" in op.material else "interior_door_solid_core"
         items.append(_item(
             "interior_doors", "Doors",
             f"Pre-hung interior door {op.width}x{op.height} - {op.style}",
