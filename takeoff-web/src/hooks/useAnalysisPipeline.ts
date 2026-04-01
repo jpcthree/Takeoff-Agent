@@ -106,6 +106,10 @@ export function useAnalysisPipeline() {
           if (Object.keys(result.pageScales).length > 0) {
             dispatch({ type: 'SET_PAGE_SCALES', scales: result.pageScales });
           }
+          // Persist page classifications for thumbnail grid view
+          if (result.pageClassifications.length > 0) {
+            dispatch({ type: 'SET_PAGE_CLASSIFICATIONS', classifications: result.pageClassifications });
+          }
           addAnalysisMessage('✓ Building model extracted — ready to calculate');
           return result.model;
         } else {

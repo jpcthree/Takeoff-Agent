@@ -22,15 +22,17 @@ interface LeftPanelProps {
 
 function LeftPanel({ onExpand, onCollapse, isExpanded }: LeftPanelProps) {
   const [activeTab, setActiveTab] = useState<'plans' | 'takeoffs'>('plans');
-  const [pdfPage, setPdfPage] = useState<number | null>(null);
+  const [navigateToPage, setNavigateToPage] = useState<number | null>(null);
   const [highlightedMeasurementId, setHighlightedMeasurementId] = useState<string | null>(null);
   const { state } = useProjectStore();
 
   const measurementCount = state.measurements.length;
 
   const handleNavigateToPage = useCallback((pageNumber: number) => {
-    setPdfPage(pageNumber);
+    setNavigateToPage(pageNumber);
     setActiveTab('plans');
+    // Reset after a tick so the same page can be re-navigated
+    setTimeout(() => setNavigateToPage(null), 100);
   }, []);
 
   return (
@@ -74,6 +76,7 @@ function LeftPanel({ onExpand, onCollapse, isExpanded }: LeftPanelProps) {
             onCollapse={onCollapse}
             isExpanded={isExpanded}
             highlightedMeasurementId={highlightedMeasurementId}
+            navigateToPage={navigateToPage}
           />
         ) : (
           <TakeoffsList

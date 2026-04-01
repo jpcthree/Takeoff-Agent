@@ -394,6 +394,7 @@ ${pagesDescription}`,
 export interface AnalysisResult {
   model: Record<string, unknown>;
   pageScales: Record<number, ScaleInfo>;
+  pageClassifications: { page: number; type: string; description: string }[];
 }
 
 export async function analyzeBlueprint(
@@ -582,6 +583,13 @@ export async function analyzeBlueprint(
     }
   }
 
+  // Build simplified page classification list for UI (thumbnail titles)
+  const pageClassificationsSimple = pageClassifications.map((c) => ({
+    page: c.page,
+    type: c.type,
+    description: c.description,
+  }));
+
   if (signal?.aborted) return null;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -681,7 +689,7 @@ export async function analyzeBlueprint(
         totalPages,
         message: `✓ Building model complete (${pageResults.length} pages analyzed)`,
       });
-      return { model: mergedModel, pageScales };
+      return { model: mergedModel, pageScales, pageClassifications: pageClassificationsSimple };
     } else {
       // Fallback: return the best single page result
       onProgress({
@@ -690,7 +698,7 @@ export async function analyzeBlueprint(
         totalPages,
         message: '⚠ Merge failed, using best single-page result',
       });
-      return { model: pageResults[0].model, pageScales };
+      return { model: pageResults[0].model, pageScales, pageClassifications: pageClassificationsSimple };
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -702,7 +710,7 @@ export async function analyzeBlueprint(
     });
     // Still try to return something useful
     if (pageResults.length > 0) {
-      return { model: pageResults[0].model, pageScales };
+      return { model: pageResults[0].model, pageScales, pageClassifications: pageClassificationsSimple };
     }
     return null;
   }

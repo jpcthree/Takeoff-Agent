@@ -19,7 +19,7 @@ export interface ScaleInfo {
   scaleString: string;
   /** Multiplier from paper inches to real inches */
   scaleFactor: number;
-  source: 'text_regex' | 'claude_classification' | 'both';
+  source: 'text_regex' | 'claude_classification' | 'both' | 'user_override';
   confidence: 'high' | 'medium' | 'low';
 }
 

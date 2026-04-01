@@ -9,7 +9,6 @@ import {
   Edit3,
   Check,
   X,
-  MapPin,
 } from 'lucide-react';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import type { Measurement } from '@/lib/types/measurement';
@@ -148,7 +147,7 @@ function TradeGroup({
               onMouseEnter={() => onHoverMeasurement?.(m.id)}
               onMouseLeave={() => onHoverMeasurement?.(null)}
             >
-              {/* Name (editable) */}
+              {/* Name — click to navigate to page, double-click to rename */}
               {editingId === m.id ? (
                 <form
                   className="flex items-center gap-1 flex-1 min-w-0"
@@ -168,35 +167,26 @@ function TradeGroup({
                 </form>
               ) : (
                 <button
-                  onClick={() => startEdit(m)}
+                  onClick={() => onNavigateToPage?.(m.pageNumber)}
+                  onDoubleClick={(e) => { e.stopPropagation(); startEdit(m); }}
                   className="flex-1 text-left text-xs text-gray-700 truncate hover:text-primary cursor-pointer min-w-0"
-                  title={`${m.name} — click to rename`}
+                  title={`${m.name} — click to view on page ${m.pageNumber}, double-click to rename`}
                 >
                   {m.name}
                 </button>
               )}
 
-              {/* Type badge */}
-              <span className="text-[10px] text-gray-400 shrink-0">
-                {getTypeLabel(m.trade, m.measurementType)}
-              </span>
-
-              {/* Result */}
+              {/* Result + page badge */}
               <span
-                className="text-xs font-medium shrink-0 min-w-[60px] text-right"
+                className="text-xs font-medium shrink-0 text-right"
                 style={{ color }}
               >
                 {formatMeasurementResult(m.resultValue, m.resultUnit)}
               </span>
 
-              {/* Page link */}
-              <button
-                onClick={() => onNavigateToPage?.(m.pageNumber)}
-                className="p-0.5 text-gray-300 hover:text-primary cursor-pointer shrink-0"
-                title={`Go to page ${m.pageNumber}`}
-              >
-                <MapPin className="h-3 w-3" />
-              </button>
+              <span className="text-[9px] text-gray-400 shrink-0 bg-gray-100 px-1 py-0.5 rounded">
+                p{m.pageNumber}
+              </span>
 
               {/* Add to estimate */}
               {!m.addedToEstimate && (

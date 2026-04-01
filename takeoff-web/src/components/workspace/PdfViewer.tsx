@@ -18,6 +18,7 @@ import {
   Clock,
   AlertCircle,
   Ruler,
+  LayoutGrid,
 } from 'lucide-react';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { useAnalysisPipeline } from '@/hooks/useAnalysisPipeline';
@@ -39,13 +40,15 @@ interface PdfViewerProps {
   isExpanded?: boolean;
   /** ID of measurement to highlight on the overlay */
   highlightedMeasurementId?: string | null;
+  /** External page navigation request (from TakeoffsList) */
+  navigateToPage?: number | null;
 }
 
-function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId }: PdfViewerProps = {}) {
+function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId, navigateToPage }: PdfViewerProps = {}) {
   const params = useParams();
   const projectId = params?.id as string;
 
-  const { state, setPdfFile, setPdfPages, setStatus, setError } = useProjectStore();
+  const { state, setPdfFile, setPdfPages, setStatus, setError, dispatch } = useProjectStore();
   const { pdfPages, analysisStatus, buildingModel, analysisMessages, error } = state;
   const {
     runFullPipeline,
@@ -64,6 +67,7 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
   const [pageJumpValue, setPageJumpValue] = useState('');
   const [showMeasureToolbar, setShowMeasureToolbar] = useState(false);
   const [imageDims, setImageDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pageJumpRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -74,10 +78,12 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
   const currentPageData = hasPlan ? pdfPages[currentPage - 1] : null;
   const isBusy = isAnalyzing || isCalculating || isConverting;
 
-  // ── Scale for measurement ──
-  const pageScale = state.pageScales[currentPage];
-  const scaleFactor = pageScale?.scaleFactor || 48; // default 1/4" = 1'-0"
-  const scaleString = pageScale?.scaleString || '';
+  // ── Scale for measurement (override takes priority) ──
+  const pageScaleOverride = state.scaleOverrides[currentPage];
+  const pageScaleDetected = state.pageScales[currentPage];
+  const effectiveScale = pageScaleOverride || pageScaleDetected;
+  const scaleFactor = effectiveScale?.scaleFactor || 48;
+  const scaleString = effectiveScale?.scaleString || '';
 
   // ── Measurement tool ──
   const measurement = useMeasurementTool(scaleFactor, scaleString, currentPage);
@@ -109,6 +115,14 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
       runningLabel = `${Math.round(sf).toLocaleString()} SF`;
     }
   }
+
+  // Handle external page navigation
+  useEffect(() => {
+    if (navigateToPage && navigateToPage >= 1 && navigateToPage <= totalPages) {
+      setCurrentPage(navigateToPage);
+      setViewMode('single');
+    }
+  }, [navigateToPage, totalPages]);
 
   // Auto-load PDF files from IndexedDB (uploaded during wizard)
   useEffect(() => {
@@ -156,7 +170,7 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
     };
   }, [isAnalyzing, isCalculating]);
 
-  // Keyboard shortcuts for measurement tool
+  // Keyboard shortcuts for measurement tool + arrow page nav
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't intercept if typing in an input
@@ -172,16 +186,28 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
         } else if (activeTool) {
           deactivateTool();
           setShowMeasureToolbar(false);
+        } else if (viewMode === 'grid') {
+          setViewMode('single');
         }
       } else if (e.key === 'Backspace' && toolState === 'measuring') {
         e.preventDefault();
         undoLastPoint();
+      } else if (e.key === 'ArrowLeft' && hasPlan && viewMode === 'single' && !activeTool) {
+        e.preventDefault();
+        setCurrentPage((p) => Math.max(1, p - 1));
+      } else if (e.key === 'ArrowRight' && hasPlan && viewMode === 'single' && !activeTool) {
+        e.preventDefault();
+        setCurrentPage((p) => Math.min(totalPages, p + 1));
+      } else if (e.key === 'g' || e.key === 'G') {
+        if (!activeTool && hasPlan) {
+          setViewMode((v) => v === 'grid' ? 'single' : 'grid');
+        }
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeTool, toolState, cancelMeasurement, deactivateTool, undoLastPoint]);
+  }, [activeTool, toolState, cancelMeasurement, deactivateTool, undoLastPoint, hasPlan, totalPages, viewMode]);
 
   const handleFileUpload = useCallback(
     async (file: File) => {
@@ -229,10 +255,36 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
     setImageDims({ w: img.naturalWidth, h: img.naturalHeight });
   }, []);
 
+  /** Handle scale override from toolbar */
+  const handleScaleOverride = useCallback((scaleStr: string, factor: number) => {
+    dispatch({
+      type: 'SET_SCALE_OVERRIDE',
+      pageNumber: currentPage,
+      scale: {
+        pageNumber: currentPage,
+        scaleString: scaleStr,
+        scaleFactor: factor,
+        source: 'user_override',
+        confidence: 'high' as const,
+      },
+    });
+  }, [dispatch, currentPage]);
+
   const formatElapsed = (s: number) => {
     const min = Math.floor(s / 60);
     const sec = s % 60;
     return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
+  };
+
+  /** Get page title from classifications */
+  const getPageTitle = (pageNum: number): string => {
+    const cls = state.pageClassifications.find((c) => c.page === pageNum);
+    if (cls) {
+      // Capitalize type and add description
+      const type = cls.type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      return type;
+    }
+    return `Page ${pageNum}`;
   };
 
   const isMeasuring = !!activeTool;
@@ -243,12 +295,13 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 shrink-0">
         <h3 className="text-sm font-semibold text-gray-900">Plans</h3>
         <div className="flex items-center gap-1">
-          {hasPlan && (
+          {hasPlan && viewMode === 'single' && (
             <>
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
                 className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 cursor-pointer"
+                title="Previous page (←)"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -295,13 +348,32 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
                 className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 cursor-pointer"
+                title="Next page (→)"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
             </>
           )}
+          {hasPlan && viewMode === 'grid' && (
+            <span className="text-xs text-gray-500">
+              {totalPages} pages — click to view
+            </span>
+          )}
           <div className="flex items-center gap-0.5 ml-1 border-l border-gray-200 pl-1">
             {hasPlan && (
+              <button
+                onClick={() => setViewMode(viewMode === 'grid' ? 'single' : 'grid')}
+                className={`p-1 cursor-pointer transition-colors ${
+                  viewMode === 'grid'
+                    ? 'text-primary'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+                title="Page grid view (G)"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            )}
+            {hasPlan && viewMode === 'single' && (
               <button
                 onClick={() => {
                   if (isMeasuring) {
@@ -361,14 +433,15 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
         </div>
       </div>
 
-      {/* Measurement toolbar (below header, above content) */}
-      {hasPlan && (showMeasureToolbar || isMeasuring) && (
+      {/* Measurement toolbar (below header, above content) — single view only */}
+      {hasPlan && viewMode === 'single' && (showMeasureToolbar || isMeasuring) && (
         <MeasurementToolbar
           toolState={toolState}
           activeTool={activeTool}
           activePointCount={activePoints.length}
           runningLabel={runningLabel}
           scaleString={scaleString}
+          scaleFactor={scaleFactor}
           onStartTool={(tool) => {
             startTool(tool);
             setShowMeasureToolbar(false);
@@ -381,6 +454,7 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
             setShowMeasureToolbar(false);
           }}
           onConfirm={confirmMeasurement}
+          onScaleOverride={handleScaleOverride}
         />
       )}
 
@@ -397,7 +471,51 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
             <p className="text-sm text-gray-500">Converting PDF pages...</p>
             <p className="text-xs text-gray-400">This may take a moment for large files</p>
           </div>
+        ) : hasPlan && viewMode === 'grid' ? (
+          /* ── Thumbnail grid view ── */
+          <div className="p-3 w-full">
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+              {pdfPages.map((page, idx) => {
+                const pageNum = idx + 1;
+                const title = getPageTitle(pageNum);
+                const measureCount = state.measurements.filter((m) => m.pageNumber === pageNum).length;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => {
+                      setCurrentPage(pageNum);
+                      setViewMode('single');
+                    }}
+                    className={`group flex flex-col border rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${
+                      currentPage === pageNum
+                        ? 'border-primary ring-2 ring-primary/20'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="relative bg-white p-1">
+                      <img
+                        src={`data:${page.mime_type};base64,${page.data}`}
+                        alt={`Page ${pageNum}`}
+                        className="w-full h-auto"
+                        draggable={false}
+                      />
+                      {measureCount > 0 && (
+                        <span className="absolute top-2 right-2 bg-primary text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                          {measureCount}
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-2 py-1.5 bg-gray-50 border-t border-gray-100">
+                      <p className="text-[10px] font-medium text-gray-700 truncate">{title}</p>
+                      <p className="text-[9px] text-gray-400">Page {pageNum}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ) : hasPlan && currentPageData ? (
+          /* ── Single page view with measurement overlay ── */
           <div
             className="p-2 relative"
             style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
@@ -490,7 +608,7 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId 
       )}
 
       {/* Bottom controls */}
-      {hasPlan && (
+      {hasPlan && viewMode === 'single' && (
         <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-3 py-2 shrink-0">
           {/* Action buttons */}
           <div className="flex items-center gap-2">

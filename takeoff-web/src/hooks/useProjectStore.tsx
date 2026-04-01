@@ -73,6 +73,10 @@ export interface ProjectState {
   measurements: Measurement[];
   /** Detected scale per page number */
   pageScales: Record<number, ScaleInfo>;
+  /** User-overridden scales per page (takes priority over detected) */
+  scaleOverrides: Record<number, ScaleInfo>;
+  /** Page classifications from analysis (type + description for thumbnails) */
+  pageClassifications: { page: number; type: string; description: string }[];
   /** Currently active measurement tool configuration (null = tool inactive) */
   activeMeasurementTool: ActiveMeasurementTool | null;
 }
@@ -100,6 +104,8 @@ type ProjectAction =
   | { type: 'SET_PROJECT_TYPE'; projectType: 'plans' | 'address' }
   | { type: 'SET_ESTIMATE_DATA'; propertyData: PropertyInfo; propertyImages: Record<string, string | null>; propertyNotes: NoteSection[]; insulationNotes: NoteSection[]; assumptions: string[]; roofClassification: Record<string, string> }
   | { type: 'SET_PAGE_SCALES'; scales: Record<number, ScaleInfo> }
+  | { type: 'SET_SCALE_OVERRIDE'; pageNumber: number; scale: ScaleInfo }
+  | { type: 'SET_PAGE_CLASSIFICATIONS'; classifications: { page: number; type: string; description: string }[] }
   | { type: 'ADD_MEASUREMENT'; measurement: Measurement }
   | { type: 'UPDATE_MEASUREMENT'; id: string; changes: Partial<Measurement> }
   | { type: 'REMOVE_MEASUREMENT'; id: string }
@@ -130,6 +136,8 @@ const initialState: ProjectState = {
   roofClassification: {},
   measurements: [],
   pageScales: {},
+  scaleOverrides: {},
+  pageClassifications: [],
   activeMeasurementTool: null,
 };
 
@@ -237,6 +245,15 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
     case 'SET_PAGE_SCALES':
       return { ...state, pageScales: action.scales };
 
+    case 'SET_SCALE_OVERRIDE':
+      return {
+        ...state,
+        scaleOverrides: { ...state.scaleOverrides, [action.pageNumber]: action.scale },
+      };
+
+    case 'SET_PAGE_CLASSIFICATIONS':
+      return { ...state, pageClassifications: action.classifications };
+
     case 'ADD_MEASUREMENT':
       return { ...state, measurements: [...state.measurements, action.measurement] };
 
@@ -297,6 +314,8 @@ interface ProjectStoreContextValue {
     roofClassification: Record<string, string>;
   }) => void;
   setPageScales: (scales: Record<number, ScaleInfo>) => void;
+  setScaleOverride: (pageNumber: number, scale: ScaleInfo) => void;
+  setPageClassifications: (classifications: { page: number; type: string; description: string }[]) => void;
   addMeasurement: (measurement: Measurement) => void;
   updateMeasurement: (id: string, changes: Partial<Measurement>) => void;
   removeMeasurement: (id: string) => void;
@@ -345,6 +364,8 @@ export function ProjectStoreProvider({
     roofClassification: Record<string, string>;
   }) => dispatch({ type: 'SET_ESTIMATE_DATA', ...data }), []);
   const setPageScales = useCallback((scales: Record<number, ScaleInfo>) => dispatch({ type: 'SET_PAGE_SCALES', scales }), []);
+  const setScaleOverride = useCallback((pageNumber: number, scale: ScaleInfo) => dispatch({ type: 'SET_SCALE_OVERRIDE', pageNumber, scale }), []);
+  const setPageClassifications = useCallback((classifications: { page: number; type: string; description: string }[]) => dispatch({ type: 'SET_PAGE_CLASSIFICATIONS', classifications }), []);
   const addMeasurement = useCallback((measurement: Measurement) => dispatch({ type: 'ADD_MEASUREMENT', measurement }), []);
   const updateMeasurement = useCallback((id: string, changes: Partial<Measurement>) => dispatch({ type: 'UPDATE_MEASUREMENT', id, changes }), []);
   const removeMeasurement = useCallback((id: string) => dispatch({ type: 'REMOVE_MEASUREMENT', id }), []);
@@ -372,6 +393,8 @@ export function ProjectStoreProvider({
         setProjectType,
         setEstimateData,
         setPageScales,
+        setScaleOverride,
+        setPageClassifications,
         addMeasurement,
         updateMeasurement,
         removeMeasurement,

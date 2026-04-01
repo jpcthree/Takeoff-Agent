@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Check, Undo2, Ruler } from 'lucide-react';
+import { X, Check, Undo2, Ruler, Edit3 } from 'lucide-react';
 import { MEASUREMENT_TYPES, getTradeColor } from '@/lib/types/measurement';
+import { parseScaleString } from '@/lib/utils/scale-detection';
 import type { ActiveMeasurementTool, MeasurementMode } from '@/lib/types/measurement';
 import type { MeasurementToolState } from '@/hooks/useMeasurementTool';
 
@@ -21,6 +22,8 @@ interface MeasurementToolbarProps {
   runningLabel?: string;
   /** Scale string for the current page */
   scaleString: string;
+  /** Scale factor for the current page */
+  scaleFactor: number;
   /** Called to start the tool with a specific config */
   onStartTool: (tool: ActiveMeasurementTool) => void;
   /** Called to finish (double-click equivalent) */
@@ -33,7 +36,25 @@ interface MeasurementToolbarProps {
   onDeactivate: () => void;
   /** Called to confirm measurement with a name */
   onConfirm: (name: string) => void;
+  /** Called when user overrides the scale */
+  onScaleOverride?: (scaleString: string, scaleFactor: number) => void;
 }
+
+// ---------------------------------------------------------------------------
+// Common scales for quick selection
+// ---------------------------------------------------------------------------
+
+const COMMON_SCALES = [
+  { label: '1/8" = 1\'-0"', factor: 96 },
+  { label: '3/16" = 1\'-0"', factor: 64 },
+  { label: '1/4" = 1\'-0"', factor: 48 },
+  { label: '3/8" = 1\'-0"', factor: 32 },
+  { label: '1/2" = 1\'-0"', factor: 24 },
+  { label: '3/4" = 1\'-0"', factor: 16 },
+  { label: '1" = 1\'-0"', factor: 12 },
+  { label: '1 1/2" = 1\'-0"', factor: 8 },
+  { label: '3" = 1\'-0"', factor: 4 },
+];
 
 // ---------------------------------------------------------------------------
 // Available trades for measurement
@@ -54,17 +75,22 @@ function MeasurementToolbar({
   activePointCount,
   runningLabel,
   scaleString,
+  scaleFactor,
   onStartTool,
   onFinish,
   onUndo,
   onCancel,
   onDeactivate,
   onConfirm,
+  onScaleOverride,
 }: MeasurementToolbarProps) {
   const [selectedTrade, setSelectedTrade] = useState<string>(TRADE_OPTIONS[0]?.id || 'insulation');
   const [selectedType, setSelectedType] = useState<string>('');
   const [measurementName, setMeasurementName] = useState('');
+  const [editingScale, setEditingScale] = useState(false);
+  const [scaleInput, setScaleInput] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const scaleInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus name input when entering naming state
   useEffect(() => {
@@ -73,6 +99,13 @@ function MeasurementToolbar({
       nameInputRef.current.select();
     }
   }, [toolState]);
+
+  // Auto-focus scale input when editing
+  useEffect(() => {
+    if (editingScale && scaleInputRef.current) {
+      scaleInputRef.current.focus();
+    }
+  }, [editingScale]);
 
   // Reset type selection when trade changes
   useEffect(() => {
@@ -110,7 +143,79 @@ function MeasurementToolbar({
     setMeasurementName('');
   };
 
+  const handleScaleSubmit = () => {
+    const trimmed = scaleInput.trim();
+    if (!trimmed) {
+      setEditingScale(false);
+      return;
+    }
+    const factor = parseScaleString(trimmed);
+    if (factor && onScaleOverride) {
+      onScaleOverride(trimmed, factor);
+    }
+    setEditingScale(false);
+    setScaleInput('');
+  };
+
+  const handleScaleSelect = (label: string, factor: number) => {
+    if (onScaleOverride) {
+      onScaleOverride(label, factor);
+    }
+    setEditingScale(false);
+    setScaleInput('');
+  };
+
   const tradeColor = activeTool ? getTradeColor(activeTool.trade) : '#6b7280';
+
+  // ── Scale editor (click on scale to override) ──
+  const scaleDisplay = (
+    <span className="flex items-center gap-1 shrink-0">
+      {editingScale ? (
+        <form
+          className="flex items-center gap-1"
+          onSubmit={(e) => { e.preventDefault(); handleScaleSubmit(); }}
+        >
+          <select
+            className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+            value=""
+            onChange={(e) => {
+              const sel = COMMON_SCALES.find((s) => s.label === e.target.value);
+              if (sel) handleScaleSelect(sel.label, sel.factor);
+            }}
+          >
+            <option value="">Pick scale...</option>
+            {COMMON_SCALES.map((s) => (
+              <option key={s.factor} value={s.label}>{s.label}</option>
+            ))}
+          </select>
+          <span className="text-xs text-gray-400">or</span>
+          <input
+            ref={scaleInputRef}
+            type="text"
+            value={scaleInput}
+            onChange={(e) => setScaleInput(e.target.value)}
+            onBlur={() => { if (!scaleInput.trim()) setEditingScale(false); }}
+            className="w-24 text-xs border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder={'1/4" = 1\'-0"'}
+          />
+          <button type="submit" className="p-0.5 text-green-500 cursor-pointer"><Check className="h-3 w-3" /></button>
+          <button type="button" onClick={() => setEditingScale(false)} className="p-0.5 text-gray-400 cursor-pointer"><X className="h-3 w-3" /></button>
+        </form>
+      ) : (
+        <button
+          onClick={() => {
+            setEditingScale(true);
+            setScaleInput(scaleString);
+          }}
+          className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-primary cursor-pointer"
+          title="Click to override scale"
+        >
+          {scaleString ? `Scale: ${scaleString}` : 'Set scale'}
+          <Edit3 className="h-2.5 w-2.5" />
+        </button>
+      )}
+    </span>
+  );
 
   // ── Naming state: show name input ──
   if (toolState === 'naming') {
@@ -217,11 +322,7 @@ function MeasurementToolbar({
           Click on the plan to start measuring
         </span>
         <div className="flex-1" />
-        {scaleString && (
-          <span className="text-xs text-gray-400 shrink-0">
-            Scale: {scaleString}
-          </span>
-        )}
+        {scaleDisplay}
         <button
           onClick={onDeactivate}
           className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
@@ -271,11 +372,7 @@ function MeasurementToolbar({
 
       <div className="flex-1" />
 
-      {scaleString && (
-        <span className="text-xs text-gray-400 shrink-0">
-          {scaleString}
-        </span>
-      )}
+      {scaleDisplay}
 
       {/* Start button */}
       <button
