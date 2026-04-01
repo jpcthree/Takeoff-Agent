@@ -100,6 +100,8 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
     cancelMeasurement,
     deactivateTool,
     confirmMeasurement,
+    pendingResult,
+    pendingLinearFt,
   } = measurement;
 
   // Measurements for current page only
@@ -144,7 +146,8 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
           setStatus('idle');
           setIsConverting(false);
 
-          await clearPdfFiles(projectId);
+          // Keep PDF in IndexedDB so it persists across navigations
+          // await clearPdfFiles(projectId);
         }
       } catch (err) {
         console.error('Failed to auto-load PDF:', err);
@@ -442,6 +445,8 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
           runningLabel={runningLabel}
           scaleString={scaleString}
           scaleFactor={scaleFactor}
+          pendingResult={pendingResult}
+          pendingLinearFt={pendingLinearFt}
           onStartTool={(tool) => {
             startTool(tool);
             setShowMeasureToolbar(false);

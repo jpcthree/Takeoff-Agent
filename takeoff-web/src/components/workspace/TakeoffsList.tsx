@@ -180,8 +180,14 @@ function TradeGroup({
               <span
                 className="text-xs font-medium shrink-0 text-right"
                 style={{ color }}
+                title={m.mode === 'surface_area' && m.heightFt ? `${(m.resultValue / m.heightFt).toFixed(1)} LF × ${m.heightFt} ft` : undefined}
               >
                 {formatMeasurementResult(m.resultValue, m.resultUnit)}
+                {m.mode === 'surface_area' && m.heightFt && (
+                  <span className="text-[9px] text-gray-400 ml-0.5">
+                    ({(m.resultValue / m.heightFt).toFixed(0)}LF×{m.heightFt}ft)
+                  </span>
+                )}
               </span>
 
               <span className="text-[9px] text-gray-400 shrink-0 bg-gray-100 px-1 py-0.5 rounded">

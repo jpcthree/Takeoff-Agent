@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import {
   Panel,
@@ -17,14 +17,27 @@ import { ProjectStoreProvider, useProjectStore } from '@/hooks/useProjectStore';
 import { loadSavedEstimate } from '@/lib/data/estimate-persistence';
 import { calculateRow } from '@/lib/utils/calculations';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
+import {
+  loadLineItemsLocal,
+  loadBuildingModelLocal,
+  loadMeasurementsLocal,
+  loadPageScalesLocal,
+  loadPageClassificationsLocal,
+  saveLineItemsLocal,
+  saveBuildingModelLocal,
+  saveMeasurementsLocal,
+  savePageScalesLocal,
+  savePageClassificationsLocal,
+} from '@/lib/data/local-persistence';
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 
 /** Inner component that can use the store context */
 function WorkspaceInner() {
   const params = useParams();
-  const { state, dispatch, setProjectType, setLineItems } = useProjectStore();
+  const { state, dispatch, setProjectType, setLineItems, setBuildingModel } = useProjectStore();
   const [inputMethod, setInputMethod] = useState<'plans' | 'address'>('plans');
   const [expandedPanel, setExpandedPanel] = useState<'pdf' | 'estimate' | null>(null);
+  const loadedRef = useRef(false);
 
   // Load project meta from sessionStorage (works for both local and Supabase projects)
   useEffect(() => {
@@ -54,42 +67,130 @@ function WorkspaceInner() {
     }
   }, [params?.id, dispatch, setProjectType]);
 
-  // Load saved estimate from Supabase on mount (only if no items are loaded)
+  // Load saved data on mount — localStorage first, then Supabase fallback
   useEffect(() => {
     const id = params?.id as string;
-    if (!id || !isSupabaseConfigured()) return;
+    if (!id || loadedRef.current) return;
+    loadedRef.current = true;
 
-    // Don't reload if we already have items (e.g., just ran analysis)
-    if (state.lineItems.length > 0) return;
+    // 1. Try localStorage first (always available, fast)
+    const localItems = loadLineItemsLocal(id);
+    const localModel = loadBuildingModelLocal(id);
+    const localMeasurements = loadMeasurementsLocal(id);
+    const localScales = loadPageScalesLocal(id);
+    const localClassifications = loadPageClassificationsLocal(id);
 
-    loadSavedEstimate(id).then((saved) => {
-      if (!saved || saved.lineItems.length === 0) return;
+    let hasLocalData = false;
 
-      // Convert loaded items to SpreadsheetLineItems with calculated fields
-      const spreadsheetItems: SpreadsheetLineItem[] = saved.lineItems.map((item, idx) => {
-        const calc = calculateRow(item.quantity, item.unitCost, item.laborRatePct, item.unitPrice);
-        return {
-          id: `loaded-${idx}-${Date.now()}`,
-          trade: item.trade,
-          category: item.category,
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          unitCost: item.unitCost,
-          laborRatePct: item.laborRatePct,
-          unitPrice: item.unitPrice,
-          ...calc,
-          sortOrder: item.sortOrder,
-          isUserAdded: item.isUserAdded,
-        };
-      });
-
-      setLineItems(spreadsheetItems, []);
+    if (localItems && localItems.length > 0) {
+      setLineItems(localItems, []);
       dispatch({ type: 'SET_STATUS', status: 'ready' });
-    }).catch((err) => {
-      console.warn('Failed to load saved estimate:', err);
-    });
+      hasLocalData = true;
+    }
+
+    if (localModel) {
+      setBuildingModel(localModel);
+      hasLocalData = true;
+    }
+
+    if (localMeasurements && localMeasurements.length > 0) {
+      for (const m of localMeasurements) {
+        dispatch({ type: 'ADD_MEASUREMENT', measurement: m });
+      }
+      hasLocalData = true;
+    }
+
+    if (localScales) {
+      dispatch({ type: 'SET_PAGE_SCALES', scales: localScales.scales });
+      if (Object.keys(localScales.overrides).length > 0) {
+        for (const [pageStr, scale] of Object.entries(localScales.overrides)) {
+          dispatch({ type: 'SET_SCALE_OVERRIDE', pageNumber: Number(pageStr), scale });
+        }
+      }
+      hasLocalData = true;
+    }
+
+    if (localClassifications && localClassifications.length > 0) {
+      dispatch({ type: 'SET_PAGE_CLASSIFICATIONS', classifications: localClassifications });
+      hasLocalData = true;
+    }
+
+    // 2. If no local data, try Supabase
+    if (!hasLocalData && isSupabaseConfigured()) {
+      loadSavedEstimate(id).then((saved) => {
+        if (!saved || saved.lineItems.length === 0) return;
+
+        const spreadsheetItems: SpreadsheetLineItem[] = saved.lineItems.map((item, idx) => {
+          const calc = calculateRow(item.quantity, item.unitCost, item.laborRatePct, item.unitPrice);
+          return {
+            id: `loaded-${idx}-${Date.now()}`,
+            trade: item.trade,
+            category: item.category,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitCost: item.unitCost,
+            laborRatePct: item.laborRatePct,
+            unitPrice: item.unitPrice,
+            ...calc,
+            sortOrder: item.sortOrder,
+            isUserAdded: item.isUserAdded,
+          };
+        });
+
+        setLineItems(spreadsheetItems, []);
+        dispatch({ type: 'SET_STATUS', status: 'ready' });
+      }).catch((err) => {
+        console.warn('Failed to load saved estimate:', err);
+      });
+    }
   }, [params?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save to localStorage whenever key state changes
+  useEffect(() => {
+    const id = params?.id as string;
+    if (!id || !loadedRef.current) return;
+
+    if (state.lineItems.length > 0) {
+      saveLineItemsLocal(id, state.lineItems);
+    }
+  }, [params?.id, state.lineItems]);
+
+  useEffect(() => {
+    const id = params?.id as string;
+    if (!id || !loadedRef.current) return;
+
+    if (state.buildingModel) {
+      saveBuildingModelLocal(id, state.buildingModel);
+    }
+  }, [params?.id, state.buildingModel]);
+
+  useEffect(() => {
+    const id = params?.id as string;
+    if (!id || !loadedRef.current) return;
+
+    if (state.measurements.length > 0) {
+      saveMeasurementsLocal(id, state.measurements);
+    }
+  }, [params?.id, state.measurements]);
+
+  useEffect(() => {
+    const id = params?.id as string;
+    if (!id || !loadedRef.current) return;
+
+    if (Object.keys(state.pageScales).length > 0 || Object.keys(state.scaleOverrides).length > 0) {
+      savePageScalesLocal(id, state.pageScales, state.scaleOverrides);
+    }
+  }, [params?.id, state.pageScales, state.scaleOverrides]);
+
+  useEffect(() => {
+    const id = params?.id as string;
+    if (!id || !loadedRef.current) return;
+
+    if (state.pageClassifications.length > 0) {
+      savePageClassificationsLocal(id, state.pageClassifications);
+    }
+  }, [params?.id, state.pageClassifications]);
 
   const handleExpand = useCallback((panel: 'pdf' | 'estimate') => {
     setExpandedPanel(panel);

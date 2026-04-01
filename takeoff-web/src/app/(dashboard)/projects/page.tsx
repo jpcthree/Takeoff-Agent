@@ -14,6 +14,7 @@ import {
 } from '@/components/projects/ProjectFilters';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { clearPdfFiles } from '@/lib/utils/pdf-store';
+import { deleteProjectDataLocal } from '@/lib/data/local-persistence';
 import type { Project } from '@/lib/types/database';
 
 export default function ProjectsPage() {
@@ -114,6 +115,7 @@ export default function ProjectsPage() {
 
       // Clean up local data
       sessionStorage.removeItem(`project-meta-${deleteTarget.id}`);
+      deleteProjectDataLocal(deleteTarget.id);
       try { await clearPdfFiles(deleteTarget.id); } catch { /* ignore cleanup errors */ }
 
       // Update UI — only after successful deletion

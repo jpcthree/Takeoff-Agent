@@ -36,8 +36,12 @@ export interface UseMeasurementToolReturn {
   cancelMeasurement: () => void;
   /** Deactivate the tool entirely */
   deactivateTool: () => void;
-  /** Confirm and save the measurement with a name */
-  confirmMeasurement: (name: string) => void;
+  /** Confirm and save the measurement with a name and optional height */
+  confirmMeasurement: (name: string, heightFt?: number) => void;
+  /** The pending result (available during naming step) */
+  pendingResult: { value: number; unit: string } | null;
+  /** Linear feet of the pending measurement (for surface_area display) */
+  pendingLinearFt: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +62,7 @@ export function useMeasurementTool(
 
   // Pending result for the naming step
   const pendingResultRef = useRef<{ value: number; unit: string } | null>(null);
+  const pendingLinearFtRef = useRef<number | null>(null);
 
   const startTool = useCallback(
     (tool: ActiveMeasurementTool) => {
@@ -102,6 +107,21 @@ export function useMeasurementTool(
     });
 
     pendingResultRef.current = result;
+
+    // For surface_area, also compute and store the linear feet for display
+    if (activeTool.mode === 'surface_area') {
+      const linearResult = computeMeasurementResult({
+        mode: 'linear',
+        points: activePoints,
+        scaleFactor,
+        heightFt: null,
+        isClosed: false,
+      });
+      pendingLinearFtRef.current = linearResult.value;
+    } else {
+      pendingLinearFtRef.current = null;
+    }
+
     setToolState('naming');
   }, [activeTool, activePoints, scaleFactor]);
 
@@ -144,10 +164,23 @@ export function useMeasurementTool(
   }, [setActiveMeasurementTool]);
 
   const confirmMeasurement = useCallback(
-    (name: string) => {
+    (name: string, heightFt?: number) => {
       if (!activeTool || !pendingResultRef.current) return;
 
       const isClosed = activeTool.mode === 'area' || activeTool.mode === 'surface_area';
+
+      // Recompute with height if provided (for surface_area mode)
+      let finalResult = pendingResultRef.current;
+      const finalHeight = heightFt || null;
+      if (activeTool.mode === 'surface_area' && heightFt) {
+        finalResult = computeMeasurementResult({
+          mode: 'surface_area',
+          points: activePoints,
+          scaleFactor,
+          heightFt,
+          isClosed,
+        });
+      }
 
       addMeasurement({
         id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -158,9 +191,9 @@ export function useMeasurementTool(
         pageNumber,
         points: activePoints,
         isClosed,
-        heightFt: null,
-        resultValue: pendingResultRef.current.value,
-        resultUnit: pendingResultRef.current.unit,
+        heightFt: finalHeight,
+        resultValue: finalResult.value,
+        resultUnit: finalResult.unit,
         scaleString,
         scaleFactor,
         createdAt: new Date().toISOString(),
@@ -172,6 +205,7 @@ export function useMeasurementTool(
       setCursorPos(null);
       setToolState('idle');
       pendingResultRef.current = null;
+      pendingLinearFtRef.current = null;
     },
     [activeTool, activePoints, pageNumber, scaleFactor, scaleString, addMeasurement]
   );
@@ -189,5 +223,7 @@ export function useMeasurementTool(
     cancelMeasurement,
     deactivateTool,
     confirmMeasurement,
+    pendingResult: pendingResultRef.current,
+    pendingLinearFt: pendingLinearFtRef.current,
   };
 }

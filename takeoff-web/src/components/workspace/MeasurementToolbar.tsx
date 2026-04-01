@@ -24,6 +24,10 @@ interface MeasurementToolbarProps {
   scaleString: string;
   /** Scale factor for the current page */
   scaleFactor: number;
+  /** Pending measurement result (available during naming step) */
+  pendingResult?: { value: number; unit: string } | null;
+  /** Linear feet of pending measurement (for surface_area) */
+  pendingLinearFt?: number | null;
   /** Called to start the tool with a specific config */
   onStartTool: (tool: ActiveMeasurementTool) => void;
   /** Called to finish (double-click equivalent) */
@@ -34,8 +38,8 @@ interface MeasurementToolbarProps {
   onCancel: () => void;
   /** Called to deactivate the tool entirely */
   onDeactivate: () => void;
-  /** Called to confirm measurement with a name */
-  onConfirm: (name: string) => void;
+  /** Called to confirm measurement with a name and optional height */
+  onConfirm: (name: string, heightFt?: number) => void;
   /** Called when user overrides the scale */
   onScaleOverride?: (scaleString: string, scaleFactor: number) => void;
 }
@@ -81,12 +85,15 @@ function MeasurementToolbar({
   onUndo,
   onCancel,
   onDeactivate,
+  pendingResult,
+  pendingLinearFt,
   onConfirm,
   onScaleOverride,
 }: MeasurementToolbarProps) {
   const [selectedTrade, setSelectedTrade] = useState<string>(TRADE_OPTIONS[0]?.id || 'insulation');
   const [selectedType, setSelectedType] = useState<string>('');
   const [measurementName, setMeasurementName] = useState('');
+  const [wallHeight, setWallHeight] = useState('9');
   const [editingScale, setEditingScale] = useState(false);
   const [scaleInput, setScaleInput] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -137,10 +144,14 @@ function MeasurementToolbar({
     });
   };
 
+  const isSurfaceArea = activeTool?.mode === 'surface_area';
+
   const handleConfirmName = () => {
     const name = measurementName.trim() || 'Untitled';
-    onConfirm(name);
+    const height = isSurfaceArea ? parseFloat(wallHeight) || 9 : undefined;
+    onConfirm(name, height);
     setMeasurementName('');
+    setWallHeight('9');
   };
 
   const handleScaleSubmit = () => {
@@ -217,30 +228,73 @@ function MeasurementToolbar({
     </span>
   );
 
-  // ── Naming state: show name input ──
+  // Compute live SF based on current height input
+  const liveHeight = parseFloat(wallHeight) || 9;
+  const liveSF = isSurfaceArea && pendingLinearFt ? Math.round(pendingLinearFt * liveHeight) : null;
+
+  // ── Naming state: show name input + result + height (for surface_area) ──
   if (toolState === 'naming') {
     return (
-      <div className="flex items-center gap-2 border-t border-gray-200 bg-white px-3 py-1.5">
-        <span className="text-xs text-gray-500 shrink-0">Name:</span>
+      <div className="flex flex-col border-t border-gray-200 bg-white px-3 py-1.5 gap-1.5">
+        {/* Result display */}
+        <div className="flex items-center gap-3 text-xs">
+          <div
+            className="w-2 h-2 rounded-full shrink-0"
+            style={{ backgroundColor: tradeColor }}
+          />
+          {isSurfaceArea && pendingLinearFt ? (
+            <span className="font-medium text-gray-700">
+              {pendingLinearFt.toFixed(1)} LF measured
+              <span className="text-gray-400 mx-1">&times;</span>
+              {liveHeight} ft height
+              <span className="text-gray-400 mx-1">=</span>
+              <span style={{ color: tradeColor }}>{liveSF?.toLocaleString()} SF</span>
+            </span>
+          ) : pendingResult ? (
+            <span className="font-medium" style={{ color: tradeColor }}>
+              {pendingResult.unit === 'SF'
+                ? `${Math.round(pendingResult.value).toLocaleString()} SF`
+                : `${pendingResult.value.toFixed(1)} LF`}
+            </span>
+          ) : null}
+        </div>
+
+        {/* Name + height inputs */}
         <form
-          className="flex items-center gap-1.5 flex-1"
+          className="flex items-center gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
             handleConfirmName();
           }}
         >
+          <span className="text-xs text-gray-500 shrink-0">Name:</span>
           <input
             ref={nameInputRef}
             type="text"
             value={measurementName}
             onChange={(e) => setMeasurementName(e.target.value)}
-            className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
+            className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary min-w-0"
             placeholder="Measurement name"
           />
+          {isSurfaceArea && (
+            <>
+              <span className="text-xs text-gray-500 shrink-0">Height:</span>
+              <input
+                type="number"
+                step="0.5"
+                min="1"
+                max="40"
+                value={wallHeight}
+                onChange={(e) => setWallHeight(e.target.value)}
+                className="w-14 text-xs border border-gray-300 rounded px-1.5 py-1 text-right focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <span className="text-xs text-gray-400 shrink-0">ft</span>
+            </>
+          )}
           <button
             type="submit"
             className="p-1 text-green-600 hover:text-green-800 cursor-pointer"
-            title="Save measurement"
+            title="Save measurement (Enter)"
           >
             <Check className="h-4 w-4" />
           </button>
