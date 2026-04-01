@@ -113,14 +113,14 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
     for (floor_num, ins_type, r_val), data in sorted(floor_groups.items()):
         net = data["area"]
         thickness = data["thickness"]
-        floor_label = f"Floor {floor_num}" if building.stories > 1 else "Exterior Walls"
+        floor_suffix = f" (Floor {floor_num})" if building.stories > 1 else ""
 
         if ins_type in ("batt", "fiberglass_batt", "fiberglass"):
             sf = round(net * WASTE_BATT, 2)
             cost_key = _batt_cost_key(r_val, thickness)
             items.append(_item(
                 "Wall Insulation",
-                f"{floor_label} - R-{int(r_val)} fiberglass batt ({thickness} walls)",
+                f"Exterior Wall Cavity - R-{int(r_val)} Fiberglass Batt ({thickness}{floor_suffix})",
                 sf, "sf", _lookup_cost(costs, "insulation", cost_key),
                 net * 0.02, rate,
             ))
@@ -128,14 +128,14 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         elif ins_type in ("spray_foam_open", "spray_foam_closed"):
             is_open = "open" in ins_type
             cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
-            label = "open-cell" if is_open else "closed-cell"
+            label = "Open-Cell" if is_open else "Closed-Cell"
             depth_in = _spray_foam_depth(r_val, is_open)
             sf_with_waste = math.ceil(net * WASTE_SPRAY)
             board_feet = round(sf_with_waste * depth_in, 2)
             cost_per_bf = _lookup_cost(costs, "insulation", cost_key)  # cost is per BF (sf × 1 inch)
             items.append(_item(
                 "Wall Insulation",
-                f'{floor_label} - R-{int(r_val)} {label} spray foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF)',
+                f'Exterior Wall Cavity - R-{int(r_val)} {label} Spray Foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF{floor_suffix})',
                 board_feet, "bf", cost_per_bf,
                 net * 0.04, rate,
             ))
@@ -144,7 +144,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             sf = round(net * WASTE_RIGID, 2)
             items.append(_item(
                 "Wall Insulation",
-                f"{floor_label} - R-{int(r_val)} rigid foam board",
+                f"Exterior Wall Cavity - R-{int(r_val)} Rigid Foam Board{floor_suffix}",
                 sf, "sf", _lookup_cost(costs, "insulation", "rigid_xps_1in", 1.50),
                 net * 0.03, rate,
             ))
@@ -153,7 +153,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             sf = round(net * WASTE_BLOWN, 2)
             items.append(_item(
                 "Wall Insulation",
-                f"{floor_label} - R-{int(r_val)} blown-in wall insulation",
+                f"Exterior Wall Cavity - R-{int(r_val)} Blown-In Wall Insulation{floor_suffix}",
                 sf, "sf", _blown_per_sf(costs, "blown_cellulose"),
                 net * 0.02, rate,
             ))
@@ -178,14 +178,14 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         net = data["area"]
         snd_type = data["type"]
         thickness = data["thickness"]
-        floor_label = f"Floor {floor_num}" if building.stories > 1 else "Interior"
+        floor_suffix = f" (Floor {floor_num})" if building.stories > 1 else ""
 
         if snd_type == "mineral_wool":
             cost_key = _mineral_wool_cost_key(thickness)
             sf = round(net * WASTE_BATT, 2)
             items.append(_item(
                 "Sound Insulation",
-                f"{floor_label} - Interior walls - mineral wool batt",
+                f"Interior Partition Sound - Mineral Wool Batt ({thickness}{floor_suffix})",
                 sf, "sf", _lookup_cost(costs, "insulation", cost_key, 1.15),
                 net * 0.025, rate,
             ))
@@ -195,7 +195,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             sf = round(net * WASTE_BATT, 2)
             items.append(_item(
                 "Sound Insulation",
-                f"{floor_label} - Interior walls - fiberglass batt (sound)",
+                f"Interior Partition Sound - R-{int(r_val)} Fiberglass Batt ({thickness}{floor_suffix})",
                 sf, "sf", _lookup_cost(costs, "insulation", cost_key),
                 net * 0.02, rate,
             ))
@@ -209,14 +209,14 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         if a_type == "blown":
             sf = round(attic * WASTE_BLOWN, 2)
             items.append(_item(
-                "Attic Insulation", f"Attic floor - blown-in cellulose R-{int(a_r)}",
+                "Attic Insulation", f"Attic Floor - R-{int(a_r)} Blown-In Cellulose",
                 sf, "sf", _blown_per_sf(costs, "blown_cellulose"),
                 attic * 0.01, rate,
             ))
         elif a_type == "batt":
             sf = round(attic * WASTE_BATT, 2)
             items.append(_item(
-                "Attic Insulation", f"Attic floor - R-{int(a_r)} fiberglass batt",
+                "Attic Insulation", f"Attic Floor - R-{int(a_r)} Fiberglass Batt",
                 sf, "sf", _lookup_cost(costs, "insulation", "batt_r38_2x12"),
                 attic * 0.02, rate,
             ))
@@ -230,7 +230,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             cost_per_bf = _lookup_cost(costs, "insulation", cost_key)
             items.append(_item(
                 "Attic Insulation",
-                f'Attic floor - R-{int(a_r)} {label} spray foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF)',
+                f'Attic Floor - R-{int(a_r)} {label} Spray Foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF)',
                 board_feet, "bf", cost_per_bf,
                 attic * 0.04, rate,
             ))
@@ -253,7 +253,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                     cost_per_bf = _lookup_cost(costs, "insulation", cost_key)
                     items.append(_item(
                         "Roof Deck Insulation",
-                        f'Roof deck underside - R-{int(roof_r)} {label} spray foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF)',
+                        f'Roof Deck Underside - R-{int(roof_r)} {label} Spray Foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF)',
                         board_feet, "bf", cost_per_bf,
                         roof_area * 0.05, rate,
                     ))
@@ -261,7 +261,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                     sf = round(roof_area * WASTE_RIGID, 2)
                     items.append(_item(
                         "Roof Deck Insulation",
-                        f"Roof deck - R-{int(roof_r)} rigid foam board",
+                        f"Roof Deck - R-{int(roof_r)} Rigid Foam Board",
                         sf, "sf", _lookup_cost(costs, "insulation", "rigid_xps_1in", 1.50),
                         roof_area * 0.04, rate,
                     ))
@@ -276,7 +276,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             wall_overlap = cs_perim * building.crawlspace_height.total_feet
             total_poly = round((cs + wall_overlap) * WASTE_WRAP, 2)
             items.append(_item(
-                "Crawlspace", "6 mil vapor barrier poly",
+                "Crawlspace", "Crawlspace Floor - 6 mil Poly Vapor Barrier",
                 total_poly, "sf",
                 _lookup_cost(costs, "insulation", "vapor_barrier_6mil", 0.10),
                 total_poly * 0.005, rate,
@@ -293,7 +293,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             if cs_type == "rigid":
                 sf = round(wall_area * WASTE_RIGID, 2)
                 items.append(_item(
-                    "Crawlspace", f"Crawlspace wall insulation - rigid foam R-{int(cs_r)}",
+                    "Crawlspace", f"Crawlspace Wall - R-{int(cs_r)} Rigid Foam",
                     sf, "sf", _rigid_per_sf(costs, "rigid_crawlspace_r10"),
                     wall_area * 0.03, rate,
                 ))
@@ -304,7 +304,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 cost_per_bf = _lookup_cost(costs, "insulation", "spray_foam_closed_cell")
                 items.append(_item(
                     "Crawlspace",
-                    f'Crawlspace wall - R-{int(cs_r)} closed-cell spray foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF)',
+                    f'Crawlspace Wall - R-{int(cs_r)} Closed-Cell Spray Foam ({depth_in:.1f}" depth, {sf_with_waste:,} SF)',
                     board_feet, "bf", cost_per_bf,
                     wall_area * 0.05, rate,
                 ))
@@ -319,14 +319,14 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         if floor_snd_type == "mineral_wool":
             items.append(_item(
                 "Floor Sound Insulation",
-                "Between-floor sound insulation - mineral wool batt",
+                "Between-Floor Sound - Mineral Wool Batt",
                 sf, "sf", _lookup_cost(costs, "insulation", "mineral_wool_r15_2x4", 1.15),
                 floor_snd_area * 0.02, rate,
             ))
         else:
             items.append(_item(
                 "Floor Sound Insulation",
-                "Between-floor sound insulation - fiberglass batt",
+                "Between-Floor Sound - Fiberglass Batt",
                 sf, "sf", _lookup_cost(costs, "insulation", "batt_r13_2x4_15in"),
                 floor_snd_area * 0.02, rate,
             ))
@@ -339,7 +339,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         if footprint_sf > 0:
             items.append(_item(
                 "Air Sealing",
-                "Air sealing - foam, caulk, and labor (rim joists, top plates, penetrations)",
+                "Air Sealing - Foam, Caulk, and Labor (Rim Joists, Top Plates, Penetrations)",
                 footprint_sf, "sf", 0,
                 footprint_sf * 0.03, rate,
             ))
@@ -349,7 +349,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
     if getattr(building, "vapor_barrier", True) and ext_net > 0:
         vb_sf = round(ext_net * WASTE_WRAP, 2)
         items.append(_item(
-            "Vapor Barrier", "6 mil poly vapor barrier (walls)",
+            "Vapor Barrier", "Exterior Wall - 6 mil Poly Vapor Barrier",
             vb_sf, "sf",
             _lookup_cost(costs, "insulation", "vapor_barrier_6mil", 0.10),
             ext_net * 0.005, rate,
@@ -361,7 +361,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         if ext_gross > 0:
             hw_sf = round(ext_gross * WASTE_WRAP, 2)
             items.append(_item(
-                "House Wrap", "House wrap (Tyvek type)",
+                "House Wrap", "Exterior Wall - House Wrap (Tyvek or Equivalent)",
                 hw_sf, "sf",
                 _lookup_cost(costs, "insulation", "house_wrap_per_sf", 0.50),
                 ext_gross * 0.01, rate,
@@ -370,7 +370,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             # Tape (1 roll per ~700 sf of wrap)
             tape_rolls = math.ceil(hw_sf / 700)
             items.append(_item(
-                "House Wrap", "House wrap tape",
+                "House Wrap", "Exterior Wall - House Wrap Tape",
                 tape_rolls, "roll",
                 _lookup_cost(costs, "insulation", "house_wrap_tape", 8.00),
                 0, rate,
@@ -379,7 +379,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             # Cap staples
             boxes = math.ceil(hw_sf / 3000)
             items.append(_item(
-                "House Wrap", "Cap staples (box)",
+                "House Wrap", "Exterior Wall - Cap Staples (Box)",
                 boxes, "box",
                 _lookup_cost(costs, "insulation", "cap_staples_box", 15.00),
                 0, rate,
@@ -403,8 +403,8 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
 
     for (floor_num, ci_type, ci_r), data in sorted(ci_groups.items()):
         net = data["area"]
-        floor_label = f"Floor {floor_num}" if building.stories > 1 else "Exterior Walls"
-        ci_label = ci_type.replace("_", " ").replace("rigid ", "")
+        floor_suffix = f" (Floor {floor_num})" if building.stories > 1 else ""
+        ci_label = ci_type.replace("_", " ").replace("rigid ", "").upper()
         sf = round(net * WASTE_RIGID, 2)
         # Map ci type to cost key
         ci_cost_map = {
@@ -414,7 +414,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         cost_key = ci_cost_map.get(ci_type, "rigid_xps_1in")
         items.append(_item(
             "Continuous Insulation",
-            f"{floor_label} - R-{int(ci_r)} {ci_label} continuous insulation (ci)",
+            f"Exterior Wall CI - R-{int(ci_r)} {ci_label} Continuous{floor_suffix}",
             sf, "sf", _rigid_per_sf(costs, cost_key),
             net * 0.03, rate,
         ))
@@ -432,7 +432,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             cost_key = "rigid_xps_2in" if slab_r >= 10 else "rigid_xps_1in"
             items.append(_item(
                 "Slab Insulation",
-                f"Slab edge - R-{int(slab_r)} {slab_type.upper()} ({slab_depth:.0f}' depth)",
+                f"Slab Edge - R-{int(slab_r)} {slab_type.upper()} ({slab_depth:.0f}' Depth)",
                 sf, "sf", _rigid_per_sf(costs, cost_key),
                 perim * 0.05, rate,
             ))
@@ -448,7 +448,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             sf = round(us_area * WASTE_RIGID, 2)
             items.append(_item(
                 "Slab Insulation",
-                f"Under-slab - R-{int(us_r)} {us_type.upper()} rigid foam",
+                f"Under-Slab - R-{int(us_r)} {us_type.upper()} Rigid Foam",
                 sf, "sf", _rigid_per_sf(costs, "rigid_xps_2in"),
                 us_area * 0.01, rate,
             ))
@@ -464,7 +464,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(bw_area * WASTE_RIGID, 2)
                 items.append(_item(
                     "Basement Insulation",
-                    f"Basement wall ({bw_loc}) - R-{int(bw_r)} rigid foam",
+                    f"Basement Wall ({bw_loc}) - R-{int(bw_r)} Rigid Foam",
                     sf, "sf", _rigid_per_sf(costs, "rigid_crawlspace_r10"),
                     bw_area * 0.03, rate,
                 ))
@@ -474,7 +474,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 bf = round(sf_w * depth_in, 2)
                 items.append(_item(
                     "Basement Insulation",
-                    f'Basement wall ({bw_loc}) - R-{int(bw_r)} closed-cell spray foam ({depth_in:.1f}")',
+                    f'Basement Wall ({bw_loc}) - R-{int(bw_r)} Closed-Cell Spray Foam ({depth_in:.1f}")',
                     bf, "bf", _lookup_cost(costs, "insulation", "spray_foam_closed_cell"),
                     bw_area * 0.05, rate,
                 ))
@@ -482,7 +482,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(bw_area * WASTE_BATT, 2)
                 items.append(_item(
                     "Basement Insulation",
-                    f"Basement wall ({bw_loc}) - R-{int(bw_r)} fiberglass batt",
+                    f"Basement Wall ({bw_loc}) - R-{int(bw_r)} Fiberglass Batt",
                     sf, "sf", _lookup_cost(costs, "insulation", "batt_r13_2x4_15in"),
                     bw_area * 0.02, rate,
                 ))
@@ -506,7 +506,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
                 items.append(_item(
                     "Rim Joist Insulation",
-                    f'Rim/band joist - R-{int(rj_r)} {label} spray foam ({depth_in:.1f}")',
+                    f'Rim/Band Joist - R-{int(rj_r)} {label} Spray Foam ({depth_in:.1f}")',
                     bf, "bf", _lookup_cost(costs, "insulation", cost_key),
                     rj_area * 0.06, rate,
                 ))
@@ -514,7 +514,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(rj_area * WASTE_RIGID, 2)
                 items.append(_item(
                     "Rim Joist Insulation",
-                    f"Rim/band joist - R-{int(rj_r)} rigid foam cut-and-cobble",
+                    f"Rim/Band Joist - R-{int(rj_r)} Rigid Foam Cut-and-Cobble",
                     sf, "sf", _lookup_cost(costs, "insulation", "rigid_xps_2in", 1.50),
                     rj_area * 0.08, rate,
                 ))
@@ -522,7 +522,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(rj_area * WASTE_BATT, 2)
                 items.append(_item(
                     "Rim Joist Insulation",
-                    f"Rim/band joist - R-{int(rj_r)} fiberglass batt",
+                    f"Rim/Band Joist - R-{int(rj_r)} Fiberglass Batt",
                     sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(rj_r, "2x10")),
                     rj_area * 0.04, rate,
                 ))
@@ -537,7 +537,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(kw_area * WASTE_BATT, 2)
                 items.append(_item(
                     "Knee Wall Insulation",
-                    f"Knee walls - R-{int(kw_r)} fiberglass batt",
+                    f"Knee Wall - R-{int(kw_r)} Fiberglass Batt",
                     sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(kw_r, "2x4")),
                     kw_area * 0.025, rate,
                 ))
@@ -550,7 +550,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
                 items.append(_item(
                     "Knee Wall Insulation",
-                    f'Knee walls - R-{int(kw_r)} {label} spray foam ({depth_in:.1f}")',
+                    f'Knee Wall - R-{int(kw_r)} {label} Spray Foam ({depth_in:.1f}")',
                     bf, "bf", _lookup_cost(costs, "insulation", cost_key),
                     kw_area * 0.04, rate,
                 ))
@@ -568,7 +568,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 cost_key = _batt_cost_key(fu_r, fu_joist)
                 items.append(_item(
                     "Floor Insulation",
-                    f"Floor over unconditioned - R-{int(fu_r)} fiberglass batt ({fu_joist} joists)",
+                    f"Floor Over Unconditioned - R-{int(fu_r)} Fiberglass Batt ({fu_joist} Joists)",
                     sf, "sf", _lookup_cost(costs, "insulation", cost_key),
                     fu_area * 0.025, rate,
                 ))
@@ -581,7 +581,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
                 items.append(_item(
                     "Floor Insulation",
-                    f'Floor over unconditioned - R-{int(fu_r)} {label} spray foam ({depth_in:.1f}")',
+                    f'Floor Over Unconditioned - R-{int(fu_r)} {label} Spray Foam ({depth_in:.1f}")',
                     bf, "bf", _lookup_cost(costs, "insulation", cost_key),
                     fu_area * 0.04, rate,
                 ))
@@ -589,7 +589,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(fu_area * WASTE_BLOWN, 2)
                 items.append(_item(
                     "Floor Insulation",
-                    f"Floor over unconditioned - R-{int(fu_r)} blown insulation",
+                    f"Floor Over Unconditioned - R-{int(fu_r)} Blown Insulation",
                     sf, "sf", _blown_per_sf(costs, "blown_cellulose"),
                     fu_area * 0.02, rate,
                 ))
@@ -603,7 +603,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 support_per_sf = roll_cost / coverage if roll_cost > 5.0 else roll_cost
                 items.append(_item(
                     "Floor Insulation",
-                    f"Insulation support - {fu_support} (floor over unconditioned)",
+                    f"Floor Over Unconditioned - Insulation Support ({fu_support})",
                     support_sf, "sf", support_per_sf,
                     fu_area * 0.005, rate,
                 ))
@@ -618,7 +618,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 sf = round(gc_area * WASTE_BATT, 2)
                 items.append(_item(
                     "Garage Insulation",
-                    f"Garage ceiling - R-{int(gc_r)} fiberglass batt (living space above)",
+                    f"Garage Ceiling - R-{int(gc_r)} Fiberglass Batt (Living Space Above)",
                     sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(gc_r, "2x10")),
                     gc_area * 0.025, rate,
                 ))
@@ -631,7 +631,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
                 cost_key = "spray_foam_open_cell" if is_open else "spray_foam_closed_cell"
                 items.append(_item(
                     "Garage Insulation",
-                    f'Garage ceiling - R-{int(gc_r)} {label} spray foam ({depth_in:.1f}")',
+                    f'Garage Ceiling - R-{int(gc_r)} {label} Spray Foam ({depth_in:.1f}")',
                     bf, "bf", _lookup_cost(costs, "insulation", cost_key),
                     gc_area * 0.04, rate,
                 ))
@@ -645,7 +645,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
             sf = round(gw_area * WASTE_BATT, 2)
             items.append(_item(
                 "Garage Insulation",
-                f"Garage-to-living wall - R-{int(gw_r)} fiberglass batt",
+                f"Garage-to-Living Wall - R-{int(gw_r)} Fiberglass Batt",
                 sf, "sf", _lookup_cost(costs, "insulation", _batt_cost_key(gw_r, "2x4")),
                 gw_area * 0.02, rate,
             ))
@@ -659,7 +659,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         if baffle_count > 0:
             items.append(_item(
                 "Attic Insulation",
-                "Attic ventilation baffles (rafter bays)",
+                "Attic Floor - Ventilation Baffles (Rafter Bays)",
                 baffle_count, "ea",
                 _lookup_cost(costs, "insulation", "attic_baffle", 1.50),
                 baffle_count * 0.05, rate,
@@ -670,7 +670,7 @@ def calculate_insulation(building: BuildingModel, costs: dict) -> list[LineItem]
         hatch_count = getattr(building, "attic_hatch_count", 1)
         items.append(_item(
             "Attic Insulation",
-            "Attic hatch/access insulation cover",
+            "Attic Hatch/Access - Insulation Cover",
             hatch_count, "ea",
             _lookup_cost(costs, "insulation", "attic_hatch_cover", 35.00),
             hatch_count * 0.25, rate,

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Building2, ChevronDown, ChevronRight, List } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Building2, List } from 'lucide-react';
 import { TradeTabBar } from './TradeTabBar';
 import { SpreadsheetTable } from './SpreadsheetTable';
 import { ProjectDescriptionPanel } from './ProjectDescriptionPanel';
@@ -12,82 +12,65 @@ import type { NoteSection } from '@/lib/api/python-service';
 import type { TradeSubtotal } from '@/lib/types/line-item';
 
 // ---------------------------------------------------------------------------
-// Collapsible Section (reused pattern from TradeTabContent)
+// Notes Panel (always visible above spreadsheet)
 // ---------------------------------------------------------------------------
 
-function CollapsibleSection({
-  title,
-  defaultOpen = false,
-  children,
+function NotesPanel({
+  planNotes,
+  codeNotes,
 }: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
+  planNotes: NoteSection[];
+  codeNotes: NoteSection[];
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-t border-gray-200">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full px-5 py-3 text-left hover:bg-gray-100 transition-colors cursor-pointer"
-      >
-        {open ? (
-          <ChevronDown className="h-4 w-4 text-gray-400" />
-        ) : (
-          <ChevronRight className="h-4 w-4 text-gray-400" />
-        )}
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          {title}
-        </span>
-      </button>
-      {open && <div className="px-5 pb-4">{children}</div>}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Notes Section (plan notes + code notes)
-// ---------------------------------------------------------------------------
-
-function NotesSection({
-  title,
-  notes,
-  variant = 'code',
-}: {
-  title: string;
-  notes: NoteSection[];
-  variant?: 'plan' | 'code';
-}) {
-  if (notes.length === 0) return null;
-
-  const borderColor = variant === 'plan' ? 'border-amber-200' : 'border-gray-200';
-  const bgColor = variant === 'plan' ? 'bg-amber-50/60' : 'bg-white';
+  const hasPlan = planNotes.length > 0;
+  const hasCode = codeNotes.length > 0;
+  if (!hasPlan && !hasCode) return null;
 
   return (
-    <CollapsibleSection title={title} defaultOpen>
-      <div className="grid grid-cols-1 gap-3">
-        {notes.map((note, idx) => (
-          <div
-            key={idx}
-            className={`${bgColor} rounded-lg border ${borderColor} p-3`}
-          >
-            <h4 className="text-xs font-semibold text-gray-700 mb-2">
-              {note.title}
-            </h4>
-            <ul className="space-y-1">
-              {note.lines.map((line, lineIdx) => (
-                <li
-                  key={lineIdx}
-                  className="text-xs text-gray-600 pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-gray-400"
-                >
-                  {line}
-                </li>
-              ))}
-            </ul>
+    <div className="border-b border-gray-200 max-h-64 overflow-y-auto">
+      {hasPlan && (
+        <div className="bg-amber-50/60 px-5 py-3">
+          <h3 className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">
+            Plan Notes & Specifications
+          </h3>
+          <div className="grid grid-cols-1 gap-2">
+            {planNotes.map((note, idx) => (
+              <div key={idx} className="bg-amber-50 rounded border border-amber-200 p-2.5">
+                <h4 className="text-xs font-semibold text-gray-700 mb-1">{note.title}</h4>
+                <ul className="space-y-0.5">
+                  {note.lines.map((line, lineIdx) => (
+                    <li key={lineIdx} className="text-xs text-gray-600 pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-gray-400">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </CollapsibleSection>
+        </div>
+      )}
+      {hasCode && (
+        <div className="bg-gray-50 px-5 py-3">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Building Code Notes
+          </h3>
+          <div className="grid grid-cols-1 gap-2">
+            {codeNotes.map((note, idx) => (
+              <div key={idx} className="bg-white rounded border border-gray-200 p-2.5">
+                <h4 className="text-xs font-semibold text-gray-700 mb-1">{note.title}</h4>
+                <ul className="space-y-0.5">
+                  {note.lines.map((line, lineIdx) => (
+                    <li key={lineIdx} className="text-xs text-gray-600 pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-gray-400">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -107,6 +90,19 @@ function PlansTabContent() {
     }
     return Array.from(tradeSet);
   }, [state.lineItems]);
+
+  // Auto-switch to first trade tab when calculation completes
+  const prevStatusRef = useRef(state.analysisStatus);
+  useEffect(() => {
+    if (
+      prevStatusRef.current !== 'ready' &&
+      state.analysisStatus === 'ready' &&
+      trades.length > 0
+    ) {
+      setActiveTrade(trades[0]);
+    }
+    prevStatusRef.current = state.analysisStatus;
+  }, [state.analysisStatus, trades]);
 
   // Item counts per trade
   const tradeItemCounts = useMemo(() => {
@@ -203,33 +199,19 @@ function PlansTabContent() {
         ) : activeTrade === 'all' ? (
           <SpreadsheetTable />
         ) : (
-          <div className="flex flex-col">
-            <div className="min-h-0">
+          <div className="flex flex-col h-full">
+            {/* Notes above the spreadsheet — always visible */}
+            <NotesPanel
+              planNotes={[
+                ...(planNotes[activeTrade] || []),
+                ...(planNotes['general'] || []),
+              ]}
+              codeNotes={codeNotes[activeTrade] || []}
+            />
+            {/* Line items */}
+            <div className="flex-1 min-h-0">
               <SpreadsheetTable tradeFilter={activeTrade} />
             </div>
-            {/* Plan notes from blueprints */}
-            {(planNotes[activeTrade] || planNotes['general']) && (
-              <div className="bg-amber-50/50">
-                <NotesSection
-                  title="Plan Notes & Specifications"
-                  notes={[
-                    ...(planNotes[activeTrade] || []),
-                    ...(planNotes['general'] || []),
-                  ]}
-                  variant="plan"
-                />
-              </div>
-            )}
-            {/* Code notes below the trade estimate */}
-            {codeNotes[activeTrade] && (
-              <div className="bg-gray-50">
-                <NotesSection
-                  title="Building Code Notes"
-                  notes={codeNotes[activeTrade]}
-                  variant="code"
-                />
-              </div>
-            )}
           </div>
         )}
       </div>

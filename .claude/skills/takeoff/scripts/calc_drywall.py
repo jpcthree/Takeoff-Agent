@@ -148,6 +148,66 @@ def _resolve_ceiling_dw_type(room) -> str:
     return "standard_1_2"
 
 
+def _resolve_wall_context(wall, room_map: dict) -> str:
+    """Determine location context for a wall's description.
+
+    Returns one of: 'exterior', 'wet_area', 'garage', 'interior'
+    """
+    # Check room-based context first for garage and wet areas
+    for room_id, room in room_map.items():
+        if hasattr(room, "walls") and wall.id in room.walls:
+            if room.is_garage:
+                return "garage"
+            if room.is_bathroom or room.is_kitchen:
+                return "wet_area"
+
+    if wall.is_exterior:
+        return "exterior"
+
+    return "interior"
+
+
+def _resolve_ceiling_context(room) -> str:
+    """Determine location context for a ceiling's description.
+
+    Returns one of: 'garage', 'bathroom', 'standard'
+    """
+    if room.is_garage:
+        return "garage"
+    if room.is_bathroom:
+        return "bathroom"
+    return "standard"
+
+
+def _wall_desc(context: str, label: str, total_sheets: int, layer_note: str,
+               floor_num: int, multi_story: bool) -> str:
+    """Build a wall drywall description with location context."""
+    floor_suffix = f", Floor {floor_num}" if multi_story else ""
+    ctx_labels = {
+        "exterior": "Exterior Walls",
+        "wet_area": "Wet Areas (Bath/Kitchen)",
+        "garage": "Garage Separation",
+        "interior": "Interior Walls",
+    }
+    ctx = ctx_labels.get(context, "Walls")
+    code_note = ", IRC R302.6" if context == "garage" else ""
+    return f"{ctx} - {label} ({total_sheets} sheets{layer_note}{code_note}{floor_suffix})"
+
+
+def _ceiling_desc(context: str, label: str, total_sheets: int, layer_note: str,
+                  floor_num: int, multi_story: bool) -> str:
+    """Build a ceiling drywall description with location context."""
+    floor_suffix = f", Floor {floor_num}" if multi_story else ""
+    ctx_labels = {
+        "garage": "Garage Ceiling",
+        "bathroom": "Bathroom Ceilings",
+        "standard": "Ceilings",
+    }
+    ctx = ctx_labels.get(context, "Ceilings")
+    code_note = ", IRC R302.6" if context == "garage" else ""
+    return f"{ctx} - {label} ({total_sheets} sheets{layer_note}{code_note}{floor_suffix})"
+
+
 def _get_finish_level(obj, attr: str = "drywall_finish_level") -> int:
     """Get finish level with fallback to L4 (standard)."""
     return getattr(obj, attr, 4)
@@ -173,8 +233,8 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
     finish_level_areas = defaultdict(float)  # level → SF (for weighted labor)
     high_ceiling_area = 0.0  # SF of walls/ceilings >10ft
 
-    # ── Wall Drywall (grouped by floor + type) ──────────────────────────
-    # Key: (floor, dw_type) → {area, layers, finish_level}
+    # ── Wall Drywall (grouped by floor + type + context) ────────────────
+    # Key: (floor, dw_type, context) → {area, layers, finish_level}
     wall_groups = defaultdict(lambda: {"area": 0.0, "layers": 1, "finish_level": 4})
 
     for wall in building.walls:
@@ -187,6 +247,7 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         dw_type = _resolve_wall_dw_type(wall, room_map)
         layers = getattr(wall, "drywall_layers", 1)
         finish_level = _get_finish_level(wall)
+        context = _resolve_wall_context(wall, room_map)
 
         if wall.is_exterior:
             sides = 1  # interior face only
@@ -194,7 +255,7 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
             sides = 2  # both sides
 
         wall_sf = net * sides
-        key = (wall.floor, dw_type)
+        key = (wall.floor, dw_type, context)
         wall_groups[key]["area"] += wall_sf
         wall_groups[key]["layers"] = max(wall_groups[key]["layers"], layers)
         wall_groups[key]["finish_level"] = finish_level
@@ -204,14 +265,14 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         if wall_height > 10.0:
             high_ceiling_area += wall_sf
 
-    for (floor_num, dw_type), info in sorted(wall_groups.items()):
+    multi_story = building.stories > 1
+    for (floor_num, dw_type, context), info in sorted(wall_groups.items()):
         area = info["area"]
         layers = info["layers"]
         finish_level = info["finish_level"]
         if area <= 0:
             continue
 
-        floor_label = f"Floor {floor_num}" if building.stories > 1 else "Walls"
         sheet_sf = _sheet_sf(dw_type)
         sheets_per_layer = math.ceil(area / sheet_sf * WASTE_SHEETS)
         total_sheets = sheets_per_layer * layers
@@ -220,10 +281,11 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         cost_key = DW_COST_KEYS.get(dw_type, "drywall_1_2_4x8")
         cost_per_sheet = _lookup_cost(costs, "drywall", cost_key)
 
-        layer_note = f" ({layers} layers)" if layers > 1 else ""
+        layer_note = f", {layers} layers" if layers > 1 else ""
+        desc = _wall_desc(context, label, total_sheets, layer_note,
+                          floor_num, multi_story)
         items.append(_item(
-            "Walls",
-            f"{floor_label} - {label} ({total_sheets} sheets{layer_note})",
+            "Walls", desc,
             sf_with_waste * layers, "sf",
             cost_per_sheet,
             total_sheets * 0.05, rate,
@@ -239,7 +301,7 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         if layers > 1:
             multi_layer_sheets += total_sheets
 
-    # ── Ceiling Drywall (grouped by floor + type) ───────────────────────
+    # ── Ceiling Drywall (grouped by floor + type + context) ─────────────
     ceiling_groups = defaultdict(lambda: {"area": 0.0, "layers": 1, "finish_level": 4})
 
     for room in building.rooms:
@@ -249,8 +311,9 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         dw_type = _resolve_ceiling_dw_type(room)
         layers = getattr(room, "ceiling_drywall_layers", 1)
         finish_level = getattr(room, "ceiling_finish_level", 4)
+        context = _resolve_ceiling_context(room)
 
-        key = (room.floor, dw_type)
+        key = (room.floor, dw_type, context)
         ceiling_groups[key]["area"] += ceil_area
         ceiling_groups[key]["layers"] = max(ceiling_groups[key]["layers"], layers)
         ceiling_groups[key]["finish_level"] = finish_level
@@ -260,14 +323,13 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         if ceil_height > 10.0:
             high_ceiling_area += ceil_area
 
-    for (floor_num, dw_type), info in sorted(ceiling_groups.items()):
+    for (floor_num, dw_type, context), info in sorted(ceiling_groups.items()):
         area = info["area"]
         layers = info["layers"]
         finish_level = info["finish_level"]
         if area <= 0:
             continue
 
-        floor_label = f"Floor {floor_num}" if building.stories > 1 else "Ceilings"
         sheet_sf = _sheet_sf(dw_type)
         sheets_per_layer = math.ceil(area / sheet_sf * WASTE_SHEETS)
         total_sheets = sheets_per_layer * layers
@@ -276,10 +338,11 @@ def calculate_drywall(building: BuildingModel, costs: dict) -> list[LineItem]:
         cost_key = DW_COST_KEYS.get(dw_type, "drywall_1_2_4x8")
         cost_per_sheet = _lookup_cost(costs, "drywall", cost_key)
 
-        layer_note = f" ({layers} layers)" if layers > 1 else ""
+        layer_note = f", {layers} layers" if layers > 1 else ""
+        desc = _ceiling_desc(context, label, total_sheets, layer_note,
+                             floor_num, multi_story)
         items.append(_item(
-            "Ceilings",
-            f"{floor_label} - {label} ({total_sheets} sheets{layer_note})",
+            "Ceilings", desc,
             sf_with_waste * layers, "sf",
             cost_per_sheet,
             total_sheets * 0.06, rate,  # slightly more labor for ceilings
