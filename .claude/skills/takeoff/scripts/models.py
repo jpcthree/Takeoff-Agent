@@ -1180,6 +1180,66 @@ class BuildingModel:
     def walls_on_floor(self, floor: int) -> List[Wall]:
         return [w for w in self.walls if w.floor == floor]
 
+    def exterior_walls_on_floor(self, floor: int) -> List[Wall]:
+        return [w for w in self.walls if w.wall_type == "exterior" and w.floor == floor]
+
+    def gross_exterior_wall_area_on_floor(self, floor: int) -> float:
+        return sum(w.gross_area_sqft for w in self.exterior_walls_on_floor(floor))
+
+    def net_exterior_wall_area_on_floor(self, floor: int) -> float:
+        return sum(w.net_area_sqft(self.openings) for w in self.exterior_walls_on_floor(floor))
+
+    def exterior_perimeter_on_floor(self, floor: int) -> float:
+        return sum(w.length.total_feet for w in self.exterior_walls_on_floor(floor))
+
+    def validate_walls(self) -> List[str]:
+        """Cross-check wall data for common errors. Returns list of warnings."""
+        warnings: List[str] = []
+
+        for floor_num in range(1, self.stories + 1):
+            ext_walls = self.exterior_walls_on_floor(floor_num)
+            if not ext_walls:
+                warnings.append(
+                    f"Floor {floor_num}: No exterior walls found. "
+                    f"Every floor should have exterior walls defining the building envelope."
+                )
+                continue
+
+            perim = self.exterior_perimeter_on_floor(floor_num)
+            gross_area = self.gross_exterior_wall_area_on_floor(floor_num)
+            avg_height = gross_area / perim if perim > 0 else 0
+
+            # Check for suspiciously short perimeters vs building footprint
+            if self.total_sqft > 0:
+                # Rough expected perimeter from sqft (assuming rectangular footprint)
+                footprint = self.total_sqft / max(1, self.stories)
+                expected_perim = math.sqrt(footprint) * 4
+                if perim < expected_perim * 0.5:
+                    warnings.append(
+                        f"Floor {floor_num}: Exterior wall perimeter ({perim:.0f} LF) seems low "
+                        f"compared to building footprint (~{expected_perim:.0f} LF expected). "
+                        f"Check that all exterior wall segments are included."
+                    )
+
+            # Check wall heights
+            for w in ext_walls:
+                h = w.height.total_feet
+                if h < 7.5 or h > 14:
+                    warnings.append(
+                        f"Floor {floor_num}, wall {w.id}: Wall height {h:.1f} ft seems unusual. "
+                        f"Typical residential wall heights are 8-10 ft."
+                    )
+
+            # Report per-floor summary
+            if gross_area < 100 and self.total_sqft > 500:
+                warnings.append(
+                    f"Floor {floor_num}: Gross exterior wall area is only {gross_area:.0f} SF. "
+                    f"Expected perimeter × height = {perim:.0f} LF × {avg_height:.1f} ft = {gross_area:.0f} SF. "
+                    f"Verify all wall segments and heights are correct."
+                )
+
+        return warnings
+
     # ------- Serialization -------
 
     def to_dict(self) -> dict:

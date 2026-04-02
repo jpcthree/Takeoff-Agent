@@ -4,6 +4,8 @@ import React, { createContext, useContext, useReducer, useCallback } from 'react
 import type { PdfPage, LineItemDict, NoteSection, PropertyInfo } from '@/lib/api/python-service';
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 import type { Measurement, ActiveMeasurementTool } from '@/lib/types/measurement';
+import type { DetectedMeasurement } from '@/lib/types/detected-measurement';
+import type { PageMeasurements } from '@/lib/utils/vector-measurement';
 import type { ScaleInfo } from '@/lib/utils/scale-detection';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +28,7 @@ export type AnalysisStatus =
   | 'uploading'
   | 'converting'
   | 'analyzing'
+  | 'reviewing'
   | 'calculating'
   | 'ready'
   | 'error';
@@ -79,6 +82,14 @@ export interface ProjectState {
   pageClassifications: { page: number; type: string; description: string }[];
   /** Currently active measurement tool configuration (null = tool inactive) */
   activeMeasurementTool: ActiveMeasurementTool | null;
+
+  // ── Measurement review fields ──
+  /** Auto-detected measurements from BuildingModel cross-referenced with vector data */
+  detectedMeasurements: DetectedMeasurement[];
+  /** Whether the user has completed reviewing detected measurements */
+  measurementReviewComplete: boolean;
+  /** Raw page measurements from Phase 3 vector measurement (preserved for review logic) */
+  rawPageMeasurements: PageMeasurements[];
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +121,10 @@ type ProjectAction =
   | { type: 'UPDATE_MEASUREMENT'; id: string; changes: Partial<Measurement> }
   | { type: 'REMOVE_MEASUREMENT'; id: string }
   | { type: 'SET_ACTIVE_MEASUREMENT_TOOL'; tool: ActiveMeasurementTool | null }
+  | { type: 'SET_DETECTED_MEASUREMENTS'; measurements: DetectedMeasurement[] }
+  | { type: 'UPDATE_DETECTED_MEASUREMENT'; id: string; changes: Partial<DetectedMeasurement> }
+  | { type: 'SET_MEASUREMENT_REVIEW_COMPLETE'; complete: boolean }
+  | { type: 'SET_RAW_PAGE_MEASUREMENTS'; measurements: PageMeasurements[] }
   | { type: 'RESET' };
 
 // ---------------------------------------------------------------------------
@@ -139,6 +154,9 @@ const initialState: ProjectState = {
   scaleOverrides: {},
   pageClassifications: [],
   activeMeasurementTool: null,
+  detectedMeasurements: [],
+  measurementReviewComplete: false,
+  rawPageMeasurements: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -274,6 +292,23 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
     case 'SET_ACTIVE_MEASUREMENT_TOOL':
       return { ...state, activeMeasurementTool: action.tool };
 
+    case 'SET_DETECTED_MEASUREMENTS':
+      return { ...state, detectedMeasurements: action.measurements };
+
+    case 'UPDATE_DETECTED_MEASUREMENT':
+      return {
+        ...state,
+        detectedMeasurements: state.detectedMeasurements.map((m) =>
+          m.id === action.id ? { ...m, ...action.changes } : m
+        ),
+      };
+
+    case 'SET_MEASUREMENT_REVIEW_COMPLETE':
+      return { ...state, measurementReviewComplete: action.complete };
+
+    case 'SET_RAW_PAGE_MEASUREMENTS':
+      return { ...state, rawPageMeasurements: action.measurements };
+
     case 'RESET':
       return initialState;
 
@@ -320,6 +355,10 @@ interface ProjectStoreContextValue {
   updateMeasurement: (id: string, changes: Partial<Measurement>) => void;
   removeMeasurement: (id: string) => void;
   setActiveMeasurementTool: (tool: ActiveMeasurementTool | null) => void;
+  setDetectedMeasurements: (measurements: DetectedMeasurement[]) => void;
+  updateDetectedMeasurement: (id: string, changes: Partial<DetectedMeasurement>) => void;
+  setMeasurementReviewComplete: (complete: boolean) => void;
+  setRawPageMeasurements: (measurements: PageMeasurements[]) => void;
 }
 
 const ProjectStoreContext = createContext<ProjectStoreContextValue | null>(null);
@@ -370,6 +409,10 @@ export function ProjectStoreProvider({
   const updateMeasurement = useCallback((id: string, changes: Partial<Measurement>) => dispatch({ type: 'UPDATE_MEASUREMENT', id, changes }), []);
   const removeMeasurement = useCallback((id: string) => dispatch({ type: 'REMOVE_MEASUREMENT', id }), []);
   const setActiveMeasurementTool = useCallback((tool: ActiveMeasurementTool | null) => dispatch({ type: 'SET_ACTIVE_MEASUREMENT_TOOL', tool }), []);
+  const setDetectedMeasurements = useCallback((measurements: DetectedMeasurement[]) => dispatch({ type: 'SET_DETECTED_MEASUREMENTS', measurements }), []);
+  const updateDetectedMeasurement = useCallback((id: string, changes: Partial<DetectedMeasurement>) => dispatch({ type: 'UPDATE_DETECTED_MEASUREMENT', id, changes }), []);
+  const setMeasurementReviewComplete = useCallback((complete: boolean) => dispatch({ type: 'SET_MEASUREMENT_REVIEW_COMPLETE', complete }), []);
+  const setRawPageMeasurements = useCallback((measurements: PageMeasurements[]) => dispatch({ type: 'SET_RAW_PAGE_MEASUREMENTS', measurements }), []);
 
   return (
     <ProjectStoreContext.Provider
@@ -399,6 +442,10 @@ export function ProjectStoreProvider({
         updateMeasurement,
         removeMeasurement,
         setActiveMeasurementTool,
+        setDetectedMeasurements,
+        updateDetectedMeasurement,
+        setMeasurementReviewComplete,
+        setRawPageMeasurements,
       }}
     >
       {children}

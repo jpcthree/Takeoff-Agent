@@ -165,6 +165,34 @@ building = BuildingModel(
 - Link walls to rooms via the room's `walls` list
 - If information is not shown on plans, use reasonable defaults and mark source as "estimated"
 
+#### Wall Measurement — Critical Checklist
+
+Getting wall dimensions right is essential for accurate estimates across ALL trades (framing, insulation, drywall, siding, sheathing, paint). Follow this process for **every floor**:
+
+1. **Identify ALL exterior wall segments** on each floor plan. Walk the entire perimeter — don't skip jogs, bump-outs, or setbacks. Each continuous segment between corners should be a separate `Wall` object.
+
+2. **Measure each segment length** from the dimensioned plans. Use the architect's dimensions (typically to face of framing or outside of sheathing). If a segment isn't dimensioned, calculate it from adjacent dimensions or overall building dimensions minus known segments.
+
+3. **Set the correct `floor` number** on every wall. Multi-story buildings need walls on EACH floor (floor 1, floor 2, etc.). The 2nd floor exterior walls are separate Wall objects from the 1st floor walls — do NOT reuse 1st floor walls for upper stories.
+
+4. **Set accurate wall heights** from elevations or sections. Common heights:
+   - Standard: 8'0" (but verify — many plans use 9'0" or 10'0")
+   - Upper floors may differ from ground floor
+   - Read the plate height from wall sections or elevation dimensions
+
+5. **Cross-check your work** before running calculators:
+   - Sum all exterior wall lengths per floor. This should approximately equal the building perimeter on that floor.
+   - Multiply total exterior perimeter × wall height = gross exterior wall area for that floor.
+   - Compare against the building footprint: for a rectangular building, perimeter ≈ 2 × (length + width).
+   - If the calculated wall area seems too low, you likely missed wall segments.
+
+6. **Run the validation** after building the model:
+```python
+warnings = building.validate_walls()
+for w in warnings:
+    print(f"WARNING: {w}")
+```
+
 ### Step 4: Load Costs and Run Calculators
 
 ```python

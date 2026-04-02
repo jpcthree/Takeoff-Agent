@@ -6,3 +6,4 @@ __pycache__/
 *.xlsx
 temp/
 config/api_keys.json
+.claude/settings.local.json

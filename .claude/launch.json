@@ -6,6 +6,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "takeoff-web"],
       "port": 3000
+    },
+    {
+      "name": "homeqb-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "../HomeQB/frontend"],
+      "port": 3001
+    },
+    {
+      "name": "fort-comfort-wireframes",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", "/tmp/fc-wireframes", "-p", "8080", "-c-1"],
+      "port": 8080
     }
   ]
 }

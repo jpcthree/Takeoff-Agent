@@ -27,6 +27,7 @@ import { convertPdfClientSide } from '@/lib/utils/pdf-to-images';
 import { getPdfFiles, clearPdfFiles } from '@/lib/utils/pdf-store';
 import { MeasurementOverlay } from './MeasurementOverlay';
 import { MeasurementToolbar } from './MeasurementToolbar';
+import { DetectionOverlay } from './DetectionOverlay';
 import {
   polylineLength,
   formatPixelDistance,
@@ -53,8 +54,10 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
   const {
     runFullPipeline,
     runCalculators,
+    proceedToCalculation,
     cancel,
     isAnalyzing,
+    isReviewing,
     isCalculating,
   } = useAnalysisPipeline();
 
@@ -447,6 +450,35 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
         </div>
       </div>
 
+      {/* Review banner — shown during measurement review phase */}
+      {isReviewing && (
+        <div className="flex items-center justify-between gap-3 px-3 py-2 bg-amber-50 border-b border-amber-200">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+            <p className="text-xs text-amber-800 truncate">
+              Review detected measurements — verify dimensions are correct
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] text-amber-600">
+              {state.detectedMeasurements.filter(m => m.status === 'flagged').length > 0 && (
+                <span className="font-semibold text-red-600">
+                  {state.detectedMeasurements.filter(m => m.status === 'flagged').length} flagged
+                </span>
+              )}
+              {state.detectedMeasurements.filter(m => m.status === 'flagged').length > 0 && ' · '}
+              {state.detectedMeasurements.length} total
+            </span>
+            <button
+              onClick={() => proceedToCalculation()}
+              className="px-3 py-1 text-xs font-medium text-white bg-primary hover:bg-primary/90 rounded-md transition-colors"
+            >
+              Approve & Calculate
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Measurement toolbar (below header, above content) — single view only */}
       {hasPlan && viewMode === 'single' && (showMeasureToolbar || isMeasuring) && (
         <MeasurementToolbar
@@ -544,6 +576,20 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
               draggable={false}
               onLoad={handleImageLoad}
             />
+            {/* Detection overlay — shows auto-detected measurements during review */}
+            {imageDims.w > 0 && state.detectedMeasurements.length > 0 && (
+              <DetectionOverlay
+                measurements={state.detectedMeasurements.filter(m => m.pageNumber === currentPage)}
+                imageWidth={imageDims.w}
+                imageHeight={imageDims.h}
+                zoom={zoom}
+                highlightedId={highlightedMeasurementId || null}
+                onMeasurementClick={(m) => {
+                  dispatch({ type: 'UPDATE_DETECTED_MEASUREMENT', id: m.id, changes: { status: 'verified' } });
+                }}
+                isReviewing={isReviewing}
+              />
+            )}
             {/* Measurement overlay — must exactly match image dimensions */}
             {imageDims.w > 0 && (
               <MeasurementOverlay

@@ -248,7 +248,7 @@ function WorkspaceInner() {
   return (
     <Group orientation="horizontal" className="h-full">
       {/* Left panel: Plans + Takeoffs */}
-      <Panel defaultSize={20} minSize={15}>
+      <Panel defaultSize={35} minSize={20}>
         <ErrorBoundary>
           <LeftPanel onExpand={() => handleExpand('pdf')} />
         </ErrorBoundary>
@@ -257,7 +257,7 @@ function WorkspaceInner() {
       <Separator className="w-1 bg-gray-200 hover:bg-primary/40 transition-colors" />
 
       {/* Spreadsheet with trade tabs */}
-      <Panel defaultSize={55} minSize={30}>
+      <Panel defaultSize={40} minSize={25}>
         <ErrorBoundary>
           <PlansTabContent onExpand={() => handleExpand('estimate')} />
         </ErrorBoundary>

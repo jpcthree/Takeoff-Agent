@@ -5,6 +5,8 @@ import { useProjectStore } from './useProjectStore';
 import { calculateSelectedTrades, AVAILABLE_TRADES, getTradeLabel } from '@/lib/api/python-service';
 import { pythonLineItemToSpreadsheet } from '@/lib/utils/calculations';
 import { analyzeBlueprint, type AnalysisProgress, type AnalysisResult } from '@/lib/services/blueprint-analyzer';
+import { extractDetectedMeasurements } from '@/lib/utils/model-to-measurements';
+import { applyMeasurementCorrections } from '@/lib/utils/apply-measurement-corrections';
 import { saveLineItems, saveProjectEstimateData } from '@/lib/data/estimate-persistence';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 
@@ -25,6 +27,9 @@ export function useAnalysisPipeline() {
     setStatus,
     setError,
     addAnalysisMessage,
+    setDetectedMeasurements,
+    setRawPageMeasurements,
+    setMeasurementReviewComplete,
     dispatch,
   } = useProjectStore();
 
@@ -112,7 +117,31 @@ export function useAnalysisPipeline() {
           if (result.pageClassifications.length > 0) {
             dispatch({ type: 'SET_PAGE_CLASSIFICATIONS', classifications: result.pageClassifications });
           }
-          addAnalysisMessage('✓ Building model extracted — ready to calculate');
+          // Preserve raw page measurements for review cross-referencing
+          if (result.pageMeasurements?.length > 0) {
+            setRawPageMeasurements(result.pageMeasurements);
+          }
+
+          // Extract detected measurements for the review overlay
+          const detected = extractDetectedMeasurements(
+            result.model,
+            result.pageMeasurements || [],
+            result.pageClassifications
+          );
+          setDetectedMeasurements(detected);
+
+          const flaggedCount = detected.filter(m => m.status === 'flagged').length;
+          const totalCount = detected.length;
+          addAnalysisMessage(
+            `✓ Building model extracted — ${totalCount} measurements detected` +
+            (flaggedCount > 0 ? ` (${flaggedCount} need review)` : '')
+          );
+
+          // Pause at reviewing so user can verify measurements before calculation
+          setStatus('reviewing');
+          setMeasurementReviewComplete(false);
+          addAnalysisMessage('Review detected measurements, then click Approve to generate estimate');
+
           return result.model;
         } else {
           throw new Error(
@@ -135,7 +164,7 @@ export function useAnalysisPipeline() {
         }
       }
     },
-    [state.pdfFile, setBuildingModel, setStatus, setError, addAnalysisMessage, dispatch, fetchApiKey]
+    [state.pdfFile, setBuildingModel, setStatus, setError, addAnalysisMessage, setDetectedMeasurements, setRawPageMeasurements, setMeasurementReviewComplete, dispatch, fetchApiKey]
   );
 
   /**
@@ -229,27 +258,55 @@ export function useAnalysisPipeline() {
   );
 
   /**
-   * Full pipeline: analyze blueprints then run calculators.
+   * Full pipeline: analyze blueprints then pause at reviewing.
+   * User must call proceedToCalculation() after reviewing measurements.
    */
   const runFullPipeline = useCallback(
     async (
       _pages?: unknown, // Kept for API compatibility but no longer used (we use state.pdfFile)
       projectMeta?: { name?: string; address?: string; buildingType?: string }
     ) => {
-      const model = await analyzeBlueprints(projectMeta);
-      if (model) {
-        await runCalculators(model);
+      await analyzeBlueprints(projectMeta);
+      // Pipeline now pauses at 'reviewing' — user clicks Approve to continue
+    },
+    [analyzeBlueprints]
+  );
+
+  /**
+   * Proceed from measurement review to calculation.
+   * Called when user clicks "Approve & Calculate" after reviewing detected measurements.
+   * Applies any user corrections to the BuildingModel before running calculators.
+   */
+  const proceedToCalculation = useCallback(
+    async () => {
+      setMeasurementReviewComplete(true);
+
+      // Apply any user corrections from the review step
+      const corrections = state.detectedMeasurements.filter(m => m.status === 'corrected');
+      if (corrections.length > 0 && state.buildingModel) {
+        const correctedModel = applyMeasurementCorrections(
+          state.buildingModel,
+          state.detectedMeasurements
+        );
+        setBuildingModel(correctedModel);
+        addAnalysisMessage(`✓ ${corrections.length} measurement correction(s) applied`);
+        await runCalculators(correctedModel);
+      } else {
+        addAnalysisMessage('✓ Measurements approved — running calculators...');
+        await runCalculators();
       }
     },
-    [analyzeBlueprints, runCalculators]
+    [runCalculators, setMeasurementReviewComplete, addAnalysisMessage, state.detectedMeasurements, state.buildingModel, setBuildingModel]
   );
 
   return {
     analyzeBlueprints,
     runCalculators,
     runFullPipeline,
+    proceedToCalculation,
     cancel,
     isAnalyzing: state.analysisStatus === 'analyzing',
+    isReviewing: state.analysisStatus === 'reviewing',
     isCalculating: state.analysisStatus === 'calculating',
     isReady: state.analysisStatus === 'ready',
     analysisMessages: state.analysisMessages,
