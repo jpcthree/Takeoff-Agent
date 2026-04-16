@@ -563,19 +563,26 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
             </div>
           </div>
         ) : hasPlan && currentPageData ? (
-          /* ── Single page view with measurement overlay ── */
-          <div
-            className="p-2 relative inline-block"
-            style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }}
-          >
-            <img
-              src={`data:${currentPageData.mime_type};base64,${currentPageData.data}`}
-              alt={`Page ${currentPage}`}
-              className="shadow-sm border border-gray-200 block"
-              style={{ width: imageDims.w || undefined, height: imageDims.h || undefined }}
-              draggable={false}
-              onLoad={handleImageLoad}
-            />
+          /* ── Single page view with measurement overlay ──
+             Apply zoom via explicit width/height so the layout box tracks the
+             visual size. This lets the parent flex container center the image
+             horizontally; with transform: scale() the layout box stays at
+             natural size and flexbox pins the scaled visual to the top-left. */
+          <div className="p-2">
+            <div
+              className="relative inline-block"
+              style={imageDims.w > 0 ? {
+                width: (imageDims.w * zoom) / 100,
+                height: (imageDims.h * zoom) / 100,
+              } : undefined}
+            >
+              <img
+                src={`data:${currentPageData.mime_type};base64,${currentPageData.data}`}
+                alt={`Page ${currentPage}`}
+                className="shadow-sm border border-gray-200 block w-full h-full"
+                draggable={false}
+                onLoad={handleImageLoad}
+              />
             {/* Detection overlay — shows auto-detected measurements during review */}
             {imageDims.w > 0 && state.detectedMeasurements.length > 0 && (
               <DetectionOverlay
@@ -608,6 +615,7 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
                 highlightedId={highlightedMeasurementId}
               />
             )}
+            </div>
           </div>
         ) : (
           <div

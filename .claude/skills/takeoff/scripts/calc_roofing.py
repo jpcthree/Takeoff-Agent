@@ -373,7 +373,13 @@ def _gutter_items(building: BuildingModel, costs: dict) -> list[LineItem]:
     style_display = style.replace("_", "-")
     color_note = f" ({color})" if color else ""
 
-    ft_per_ds = 30 if building.stories >= 2 else 20
+    # DS pipe length per location: scale with building height
+    if building.stories >= 4:
+        ft_per_ds = 40
+    elif building.stories >= 2:
+        ft_per_ds = 30
+    else:
+        ft_per_ds = 20
 
     for gr in building.gutter_runs:
         total_gutter_lf += gr.length

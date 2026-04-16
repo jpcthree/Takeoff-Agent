@@ -34,6 +34,8 @@ export function useAnalysisPipeline() {
   } = useProjectStore();
 
   const abortRef = useRef<AbortController | null>(null);
+  /** Set by analyzeBlueprints when flagged measurements require manual review. */
+  const needsReviewRef = useRef<boolean>(false);
 
   /** Cancel any in-progress pipeline operation. */
   const cancel = useCallback(() => {
@@ -137,10 +139,19 @@ export function useAnalysisPipeline() {
             (flaggedCount > 0 ? ` (${flaggedCount} need review)` : '')
           );
 
-          // Pause at reviewing so user can verify measurements before calculation
-          setStatus('reviewing');
-          setMeasurementReviewComplete(false);
-          addAnalysisMessage('Review detected measurements, then click Approve to generate estimate');
+          // Only pause at reviewing if there are flagged measurements that
+          // actually need human verification. Otherwise "Analyze & Calculate"
+          // should complete end-to-end like the button promises.
+          needsReviewRef.current = flaggedCount > 0;
+          if (flaggedCount > 0) {
+            setStatus('reviewing');
+            setMeasurementReviewComplete(false);
+            addAnalysisMessage(
+              `⚠ ${flaggedCount} measurement${flaggedCount > 1 ? 's' : ''} flagged — review then click Approve to generate estimate`
+            );
+          } else {
+            setMeasurementReviewComplete(true);
+          }
 
           return result.model;
         } else {
@@ -258,18 +269,34 @@ export function useAnalysisPipeline() {
   );
 
   /**
-   * Full pipeline: analyze blueprints then pause at reviewing.
-   * User must call proceedToCalculation() after reviewing measurements.
+   * Full pipeline: analyze blueprints, then run calculators unless the analysis
+   * surfaced flagged measurements that need human review.
+   *
+   * When flaggedCount === 0, analyzeBlueprints leaves status at 'analyzing' and
+   * marks review complete — we chain into runCalculators here so "Analyze &
+   * Calculate" does what the button says.
+   *
+   * When flaggedCount > 0, analyzeBlueprints sets status to 'reviewing' and
+   * the UI shows the banner with the Approve & Calculate button. The user
+   * clicks that to trigger proceedToCalculation().
    */
   const runFullPipeline = useCallback(
     async (
       _pages?: unknown, // Kept for API compatibility but no longer used (we use state.pdfFile)
       projectMeta?: { name?: string; address?: string; buildingType?: string }
     ) => {
-      await analyzeBlueprints(projectMeta);
-      // Pipeline now pauses at 'reviewing' — user clicks Approve to continue
+      needsReviewRef.current = false;
+      const model = await analyzeBlueprints(projectMeta);
+      if (!model) return;
+
+      // analyzeBlueprints sets needsReviewRef based on flagged-measurement
+      // count. If review is needed, the UI shows the Approve banner and the
+      // user drives the next step via proceedToCalculation().
+      if (!needsReviewRef.current) {
+        await runCalculators(model);
+      }
     },
-    [analyzeBlueprints]
+    [analyzeBlueprints, runCalculators]
   );
 
   /**
