@@ -321,6 +321,8 @@ export async function calculateSelectedTrades(
   let progress = 0;
 
   const failedTrades: string[] = [];
+  /** First failure's error message — surfaced to the caller if everything fails. */
+  let firstErrorMsg: string | null = null;
 
   for (const [endpoint, wantedTrades] of endpoints) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -341,6 +343,7 @@ export async function calculateSelectedTrades(
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`Calculator failed for ${endpoint} (trades: ${wantedTrades.join(', ')}): ${msg}`);
       failedTrades.push(...wantedTrades);
+      if (firstErrorMsg === null) firstErrorMsg = msg;
     }
 
     // Report progress for each wanted trade from this endpoint.
@@ -352,6 +355,18 @@ export async function calculateSelectedTrades(
 
   if (failedTrades.length > 0) {
     console.warn(`Trades that failed: ${failedTrades.join(', ')}. ${completedTrades.length} trades succeeded.`);
+  }
+
+  // If every requested trade failed, raise a real error so the UI surfaces it
+  // as a prominent error instead of showing a misleading "✓ Complete: 0 line
+  // items" success message. Same if the calculators returned zero items
+  // despite not throwing (typically means the building model was empty).
+  if (completedTrades.length === 0 && trades.length > 0) {
+    const detail = firstErrorMsg ? ` (${firstErrorMsg})` : '';
+    throw new Error(
+      `All ${trades.length} calculator${trades.length > 1 ? 's' : ''} failed${detail}. ` +
+      `Check that the Python service is reachable and the building model has the expected shape.`
+    );
   }
 
   return {
