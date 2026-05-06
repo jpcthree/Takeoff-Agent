@@ -11,29 +11,46 @@ import {
   Minimize2,
   FileText,
   Upload,
-  Play,
-  Loader2,
-  Calculator,
   X,
-  Clock,
   AlertCircle,
   Ruler,
   LayoutGrid,
 } from 'lucide-react';
 import { useProjectStore } from '@/hooks/useProjectStore';
-import { useAnalysisPipeline } from '@/hooks/useAnalysisPipeline';
 import { useMeasurementTool } from '@/hooks/useMeasurementTool';
 import { convertPdfClientSide } from '@/lib/utils/pdf-to-images';
 import { getPdfFiles, clearPdfFiles } from '@/lib/utils/pdf-store';
 import { MeasurementOverlay } from './MeasurementOverlay';
 import { MeasurementToolbar } from './MeasurementToolbar';
-import { DetectionOverlay } from './DetectionOverlay';
 import {
   polylineLength,
   formatPixelDistance,
   polygonArea,
   pixelAreaToRealSF,
 } from '@/lib/utils/measurement-math';
+import type { SheetType } from '@/lib/types/sheet-manifest';
+
+/** Compact uppercase badges shown on classified thumbnails. */
+const SHEET_TYPE_BADGE: Record<SheetType, string> = {
+  cover: 'COVER',
+  site_plan: 'SITE',
+  floor_plan: 'PLAN',
+  reflected_ceiling_plan: 'RCP',
+  roof_plan: 'ROOF',
+  elevation: 'ELEV',
+  building_section: 'SECT',
+  wall_section: 'WALL',
+  detail: 'DTL',
+  window_schedule: 'WIN',
+  door_schedule: 'DOOR',
+  wall_types: 'WT',
+  specifications: 'SPEC',
+  mechanical: 'MECH',
+  electrical: 'ELEC',
+  plumbing: 'PLMB',
+  structural: 'STRUCT',
+  unknown: '',
+};
 
 interface PdfViewerProps {
   onExpand?: () => void;
@@ -50,21 +67,11 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
   const projectId = params?.id as string;
 
   const { state, setPdfFile, setPdfPages, setStatus, setError, dispatch } = useProjectStore();
-  const { pdfPages, analysisStatus, buildingModel, analysisMessages, error } = state;
-  const {
-    runFullPipeline,
-    runCalculators,
-    proceedToCalculation,
-    cancel,
-    isAnalyzing,
-    isReviewing,
-    isCalculating,
-  } = useAnalysisPipeline();
+  const { pdfPages, error } = state;
 
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(100);
   const [isConverting, setIsConverting] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
   const [autoLoaded, setAutoLoaded] = useState(false);
   const [showPageJump, setShowPageJump] = useState(false);
   const [pageJumpValue, setPageJumpValue] = useState('');
@@ -73,13 +80,12 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
   const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pageJumpRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const totalPages = pdfPages.length;
   const hasPlan = totalPages > 0;
   const currentPageData = hasPlan ? pdfPages[currentPage - 1] : null;
-  const isBusy = isAnalyzing || isCalculating || isConverting;
+  const isBusy = isConverting;
 
   // ── Scale for measurement (override takes priority) ──
   const pageScaleOverride = state.scaleOverrides[currentPage];
@@ -121,13 +127,29 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
     }
   }
 
-  // Handle external page navigation
+  // Handle external page navigation (prop-based)
   useEffect(() => {
     if (navigateToPage && navigateToPage >= 1 && navigateToPage <= totalPages) {
       setCurrentPage(navigateToPage);
       setViewMode('single');
     }
   }, [navigateToPage, totalPages]);
+
+  // Handle agent-driven page navigation via custom events.
+  // The chat panel dispatches `takeoff:navigate-page` from tool executors
+  // (highlight_sheet_region, suggest_measurement). Decoupled via window
+  // event so the chat doesn't need a prop wired into the viewer.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ page: number }>).detail;
+      const target = detail?.page;
+      if (typeof target !== 'number' || target < 1 || target > totalPages) return;
+      setCurrentPage(target);
+      setViewMode('single');
+    };
+    window.addEventListener('takeoff:navigate-page', handler);
+    return () => window.removeEventListener('takeoff:navigate-page', handler);
+  }, [totalPages]);
 
   // Auto-load PDF files from IndexedDB (uploaded during wizard)
   useEffect(() => {
@@ -159,22 +181,6 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
       }
     })();
   }, [projectId, autoLoaded, hasPlan, setPdfFile, setPdfPages, setStatus]);
-
-  // Elapsed timer while analyzing/calculating
-  useEffect(() => {
-    if (isAnalyzing || isCalculating) {
-      setElapsed(0);
-      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isAnalyzing, isCalculating]);
 
   // Keyboard shortcuts for measurement tool + arrow page nav
   useEffect(() => {
@@ -283,25 +289,28 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
         scaleFactor: factor,
         source: 'user_override',
         confidence: 'high' as const,
+        calibrationMethod: 'user_override',
       },
     });
   }, [dispatch, currentPage]);
 
-  const formatElapsed = (s: number) => {
-    const min = Math.floor(s / 60);
-    const sec = s % 60;
-    return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
-  };
-
-  /** Get page title from classifications */
+  /** Get page title from sheet manifest (Layer 1) or legacy classifications. */
   const getPageTitle = (pageNum: number): string => {
+    const sheet = state.sheetManifest?.sheets.find((s) => s.page === pageNum);
+    if (sheet) {
+      if (sheet.title) return sheet.title;
+      return sheet.sheetType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    }
     const cls = state.pageClassifications.find((c) => c.page === pageNum);
     if (cls) {
-      // Capitalize type and add description
-      const type = cls.type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-      return type;
+      return cls.type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     }
     return `Page ${pageNum}`;
+  };
+
+  /** Lookup classification for a specific page from the manifest. */
+  const getSheetClassification = (pageNum: number) => {
+    return state.sheetManifest?.sheets.find((s) => s.page === pageNum) ?? null;
   };
 
   const isMeasuring = !!activeTool;
@@ -450,35 +459,6 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
         </div>
       </div>
 
-      {/* Review banner — shown during measurement review phase */}
-      {isReviewing && (
-        <div className="flex items-center justify-between gap-3 px-3 py-2 bg-amber-50 border-b border-amber-200">
-          <div className="flex items-center gap-2 min-w-0">
-            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-            <p className="text-xs text-amber-800 truncate">
-              Review detected measurements — verify dimensions are correct
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[10px] text-amber-600">
-              {state.detectedMeasurements.filter(m => m.status === 'flagged').length > 0 && (
-                <span className="font-semibold text-red-600">
-                  {state.detectedMeasurements.filter(m => m.status === 'flagged').length} flagged
-                </span>
-              )}
-              {state.detectedMeasurements.filter(m => m.status === 'flagged').length > 0 && ' · '}
-              {state.detectedMeasurements.length} total
-            </span>
-            <button
-              onClick={() => proceedToCalculation()}
-              className="px-3 py-1 text-xs font-medium text-white bg-primary hover:bg-primary/90 rounded-md transition-colors"
-            >
-              Approve & Calculate
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Measurement toolbar (below header, above content) — single view only */}
       {hasPlan && viewMode === 'single' && (showMeasureToolbar || isMeasuring) && (
         <MeasurementToolbar
@@ -488,6 +468,7 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
           runningLabel={runningLabel}
           scaleString={scaleString}
           scaleFactor={scaleFactor}
+          scaleInfo={effectiveScale}
           pendingResult={pendingResult}
           pendingLinearFt={pendingLinearFt}
           onStartTool={(tool) => {
@@ -522,10 +503,17 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
         ) : hasPlan && viewMode === 'grid' ? (
           /* ── Thumbnail grid view ── */
           <div className="p-3 w-full">
+            {state.classifyingSheets && (
+              <div className="flex items-center gap-2 mb-3 text-xs text-gray-500">
+                <span className="h-3 w-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                Classifying sheets…
+              </div>
+            )}
             <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
               {pdfPages.map((page, idx) => {
                 const pageNum = idx + 1;
                 const title = getPageTitle(pageNum);
+                const sheet = getSheetClassification(pageNum);
                 const measureCount = state.measurements.filter((m) => m.pageNumber === pageNum).length;
                 return (
                   <button
@@ -552,10 +540,40 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
                           {measureCount}
                         </span>
                       )}
+                      {sheet && sheet.sheetType !== 'unknown' && (
+                        <span
+                          className="absolute top-2 left-2 bg-gray-900/80 text-white text-[8px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wide"
+                          title={`${sheet.title || sheet.sheetType} (confidence: ${sheet.confidence})`}
+                        >
+                          {SHEET_TYPE_BADGE[sheet.sheetType] ?? sheet.sheetType}
+                        </span>
+                      )}
                     </div>
                     <div className="px-2 py-1.5 bg-gray-50 border-t border-gray-100">
                       <p className="text-[10px] font-medium text-gray-700 truncate">{title}</p>
-                      <p className="text-[9px] text-gray-400">Page {pageNum}</p>
+                      <div className="flex items-center justify-between gap-1 mt-0.5">
+                        <p className="text-[9px] text-gray-400">
+                          {sheet?.sheetNumber || `Page ${pageNum}`}
+                        </p>
+                        {sheet && (
+                          <span className="flex items-center gap-0.5" title="Trade relevance">
+                            {(['insulation', 'gutters'] as const).map((trade) => {
+                              const r = sheet.tradeRelevance[trade];
+                              const cls =
+                                r === 'primary' ? 'bg-green-500'
+                                : r === 'secondary' ? 'bg-amber-400'
+                                : 'bg-gray-200';
+                              return (
+                                <span
+                                  key={trade}
+                                  className={`inline-block w-1.5 h-1.5 rounded-full ${cls}`}
+                                  title={`${trade}: ${r}`}
+                                />
+                              );
+                            })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );
@@ -583,20 +601,6 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
                 draggable={false}
                 onLoad={handleImageLoad}
               />
-            {/* Detection overlay — shows auto-detected measurements during review */}
-            {imageDims.w > 0 && state.detectedMeasurements.length > 0 && (
-              <DetectionOverlay
-                measurements={state.detectedMeasurements.filter(m => m.pageNumber === currentPage)}
-                imageWidth={imageDims.w}
-                imageHeight={imageDims.h}
-                zoom={zoom}
-                highlightedId={highlightedMeasurementId || null}
-                onMeasurementClick={(m) => {
-                  dispatch({ type: 'UPDATE_DETECTED_MEASUREMENT', id: m.id, changes: { status: 'verified' } });
-                }}
-                isReviewing={isReviewing}
-              />
-            )}
             {/* Measurement overlay — must exactly match image dimensions */}
             {imageDims.w > 0 && (
               <MeasurementOverlay
@@ -648,77 +652,9 @@ function PdfViewer({ onExpand, onCollapse, isExpanded, highlightedMeasurementId,
         </div>
       )}
 
-      {/* Analysis progress */}
-      {(isAnalyzing || isCalculating) && (
-        <div className="border-t border-blue-200 bg-blue-50 px-3 py-2 shrink-0">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-blue-800">
-              {isAnalyzing ? 'Analyzing blueprints...' : 'Running calculators...'}
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-600 flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {formatElapsed(elapsed)}
-              </span>
-              <button
-                onClick={cancel}
-                className="text-xs text-red-600 hover:text-red-800 flex items-center gap-0.5 cursor-pointer"
-              >
-                <X className="h-3 w-3" /> Cancel
-              </button>
-            </div>
-          </div>
-          <div className="max-h-[80px] overflow-y-auto">
-            {analysisMessages.slice(-5).map((msg, i) => (
-              <p key={i} className="text-xs text-blue-700 truncate">
-                {msg}
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Bottom controls */}
       {hasPlan && viewMode === 'single' && (
         <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-3 py-2 shrink-0">
-          {/* Action buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() =>
-                runFullPipeline(pdfPages, {
-                  name: state.projectMeta.name,
-                  address: state.projectMeta.address,
-                  buildingType: state.projectMeta.buildingType,
-                })
-              }
-              disabled={isBusy}
-              className="flex-1 flex items-center justify-center gap-1.5 bg-primary text-white text-xs font-medium px-3 py-1.5 rounded hover:bg-primary/90 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
-            >
-              {isAnalyzing ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analyzing...
-                </>
-              ) : isCalculating ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculating...
-                </>
-              ) : (
-                <>
-                  <Play className="h-3.5 w-3.5" /> Analyze &amp; Calculate
-                </>
-              )}
-            </button>
-            {buildingModel && (
-              <button
-                onClick={() => runCalculators()}
-                disabled={isBusy}
-                className="flex items-center gap-1.5 bg-green-600 text-white text-xs font-medium px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
-              >
-                <Calculator className="h-3.5 w-3.5" /> Recalculate
-              </button>
-            )}
-          </div>
-
           {/* Zoom controls */}
           <div className="flex items-center justify-center gap-2">
             <button

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,44 +21,44 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
 }
 
+/**
+ * v2 state snapshot sent to /api/chat on every turn so the agent can
+ * compose a phase-aware system prompt without doing its own state read.
+ */
 interface ProjectContext {
-  projectName?: string;
-  projectAddress?: string;
-  buildingModel?: Record<string, unknown>;
-  lineItemsSummary?: string;
-  /** Full line items grouped by trade for detailed context */
-  lineItemsDetail?: Array<{
-    trade: string;
-    items: Array<{
-      id: string;
-      description: string;
-      quantity: number;
-      unit: string;
-      unitCost: number;
-      unitPrice: number;
-      amount: number;
-    }>;
-    subtotal: { materialTotal: number; laborTotal: number; amount: number };
-  }>;
-  /** Property data from address lookup */
-  propertyData?: Record<string, unknown>;
-  /** Assumptions used in the estimate */
-  assumptions?: string[];
-  /** Property notes */
-  propertyNotes?: Array<{ title: string; lines: string[] }>;
-  /** Insulation-specific notes */
-  insulationNotes?: Array<{ title: string; lines: string[] }>;
+  state?: {
+    project_name?: string;
+    project_address?: string;
+    enabled_trades?: string[];
+    active_trade?: string | null;
+    conversation_phase?: 'orientation' | 'discovery' | 'measurement' | 'assumptions' | 'estimate';
+    sheet_summary?: string;
+    measurements_by_tag?: Record<string, { value: number; unit: string }>;
+    assumptions?: { trade: string; key: string; value: string }[];
+    open_questions?: { id: string; question: string }[];
+    gaps?: {
+      missing_measurements?: string[];
+      missing_assumptions?: string[];
+    };
+    scope_items_count?: number;
+  };
 }
 
 interface UseChatOptions {
   /** Called when a stream completes with text and any tool calls. */
   onStreamComplete?: (messageText: string, toolCalls: ToolCall[]) => void;
+  /** Project id used to scope conversation history in localStorage. Pass null/undefined to disable persistence. */
+  projectId?: string | null;
 }
 
 interface UseChatReturn {
   messages: ChatMessage[];
   isStreaming: boolean;
+  /** Last error from a failed stream, if any. Cleared on next sendMessage(). */
+  lastError: string | null;
   sendMessage: (content: string) => Promise<void>;
+  /** Abort the in-flight stream. Safe to call when nothing is streaming. */
+  stopStreaming: () => void;
   clearMessages: () => void;
 }
 
@@ -70,9 +70,44 @@ const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
   content:
-    "Hello! I'm your takeoff assistant. I can help you understand your construction estimate, adjust costs, or answer questions about materials and labor. How can I help?",
+    "Hi — I'm your takeoff agent. Upload a plan set, pick a trade, and I'll guide you through the takeoff. I'll suggest measurements, confirm assumptions with you, then run the rules engine to produce the estimate. Ready when you are.",
   timestamp: new Date().toISOString(),
 };
+
+// ---------------------------------------------------------------------------
+// Conversation persistence
+// ---------------------------------------------------------------------------
+
+const HISTORY_KEY_PREFIX = 'takeoff-';
+const HISTORY_KEY_SUFFIX = '-conversationHistory';
+/** Cap on stored turns to avoid unbounded localStorage growth. */
+const MAX_STORED_MESSAGES = 200;
+
+function historyKey(projectId: string): string {
+  return `${HISTORY_KEY_PREFIX}${projectId}${HISTORY_KEY_SUFFIX}`;
+}
+
+function saveHistory(projectId: string, messages: ChatMessage[]): void {
+  try {
+    // Drop the welcome message and cap to MAX_STORED_MESSAGES
+    const real = messages.filter((m) => m.id !== 'welcome').slice(-MAX_STORED_MESSAGES);
+    localStorage.setItem(historyKey(projectId), JSON.stringify(real));
+  } catch {
+    // ignore
+  }
+}
+
+function loadHistory(projectId: string): ChatMessage[] | null {
+  try {
+    const raw = localStorage.getItem(historyKey(projectId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ChatMessage[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -81,13 +116,33 @@ const WELCOME_MESSAGE: ChatMessage = {
 export function useChat(context: ProjectContext = {}, options: UseChatOptions = {}): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const onStreamCompleteRef = useRef(options.onStreamComplete);
   onStreamCompleteRef.current = options.onStreamComplete;
+  const projectId = options.projectId ?? null;
+
+  // ── Load persisted history on mount ──
+  const loadedHistoryRef = useRef(false);
+  useEffect(() => {
+    if (!projectId || loadedHistoryRef.current) return;
+    loadedHistoryRef.current = true;
+    const persisted = loadHistory(projectId);
+    if (persisted && persisted.length > 0) {
+      setMessages([WELCOME_MESSAGE, ...persisted]);
+    }
+  }, [projectId]);
+
+  // ── Save on change (skip while loading & while streaming to avoid churn) ──
+  useEffect(() => {
+    if (!projectId || !loadedHistoryRef.current || isStreaming) return;
+    saveHistory(projectId, messages);
+  }, [projectId, messages, isStreaming]);
 
   const sendMessage = useCallback(
     async (content: string) => {
       if (isStreaming) return;
+      setLastError(null);
 
       // Add user message
       const userMsg: ChatMessage = {
@@ -238,8 +293,22 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
           onStreamCompleteRef.current(fullText, completedToolCalls);
         }
       } catch (error) {
-        if ((error as Error).name === 'AbortError') return;
+        if ((error as Error).name === 'AbortError') {
+          // User-initiated abort. Mark the assistant message so it's clear
+          // the response was stopped, and surface the cancellation as an
+          // error that the UI can show alongside a Retry affordance.
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, content: m.content || '(stopped)' }
+                : m
+            )
+          );
+          return;
+        }
 
+        const msg = error instanceof Error ? error.message : String(error);
+        setLastError(msg);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsgId
@@ -257,9 +326,22 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
     [isStreaming, messages, context]
   );
 
-  const clearMessages = useCallback(() => {
-    setMessages([WELCOME_MESSAGE]);
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
   }, []);
 
-  return { messages, isStreaming, sendMessage, clearMessages };
+  const clearMessages = useCallback(() => {
+    setMessages([WELCOME_MESSAGE]);
+    setLastError(null);
+    if (projectId) {
+      try {
+        localStorage.removeItem(historyKey(projectId));
+      } catch {
+        // ignore
+      }
+    }
+  }, [projectId]);
+
+  return { messages, isStreaming, lastError, sendMessage, stopStreaming, clearMessages };
 }

@@ -1,88 +1,13 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Building2, List, ChevronDown, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Building2, List, Maximize2, Minimize2 } from 'lucide-react';
 import { TradeTabBar } from './TradeTabBar';
 import { SpreadsheetTable } from './SpreadsheetTable';
-import { ProjectDescriptionPanel } from './ProjectDescriptionPanel';
+import { TakeoffPanel } from './TakeoffPanel';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { calculateSubtotal } from '@/lib/utils/calculations';
-import { generateCodeNotes } from '@/lib/utils/building-code-notes';
-import { generateTradeKnowledge, generateLocationNotes, parseStateFromAddress } from '@/lib/utils/trade-knowledge-notes';
-import type { NoteSection } from '@/lib/api/python-service';
 import type { TradeSubtotal } from '@/lib/types/line-item';
-
-// ---------------------------------------------------------------------------
-// Collapsible Section
-// ---------------------------------------------------------------------------
-
-function CollapsibleSection({
-  title,
-  defaultOpen = false,
-  bg = 'bg-gray-50',
-  headerColor = 'text-gray-500',
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  bg?: string;
-  headerColor?: string;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className={`border-t border-gray-200 ${bg}`}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-1.5 px-5 py-2 hover:bg-black/5 transition-colors"
-      >
-        {open ? (
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-        )}
-        <span className={`text-xs font-semibold uppercase tracking-wider ${headerColor}`}>
-          {title}
-        </span>
-      </button>
-      {open && <div className="px-5 pb-3">{children}</div>}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Note Cards Renderer
-// ---------------------------------------------------------------------------
-
-function NoteCards({
-  notes,
-  cardBg = 'bg-white',
-  cardBorder = 'border-gray-200',
-}: {
-  notes: NoteSection[];
-  cardBg?: string;
-  cardBorder?: string;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-2">
-      {notes.map((note, idx) => (
-        <div key={idx} className={`${cardBg} rounded border ${cardBorder} p-2.5`}>
-          <h4 className="text-xs font-semibold text-gray-700 mb-1">{note.title}</h4>
-          <ul className="space-y-0.5">
-            {note.lines.map((line, lineIdx) => (
-              <li
-                key={lineIdx}
-                className="text-xs text-gray-600 pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-gray-400"
-              >
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main Component
@@ -95,17 +20,32 @@ interface PlansTabContentProps {
 }
 
 function PlansTabContent({ onExpand, onCollapse, isExpanded }: PlansTabContentProps = {}) {
-  const { state } = useProjectStore();
-  const [activeTrade, setActiveTrade] = useState('project');
+  const { state, setActiveTrade: setStoreActiveTrade } = useProjectStore();
+  const [activeTrade, setLocalActiveTrade] = useState('project');
 
-  // Derive trades from line items
+  // Wrap setActiveTrade so clicking a trade tab also updates the store's
+  // activeTradeId. Keeps the TakeoffPanel trade picker, the trade tab,
+  // and the agent's view of "active trade" in sync.
+  const setActiveTrade = useCallback(
+    (next: string) => {
+      setLocalActiveTrade(next);
+      if (next !== 'project' && next !== 'all') {
+        setStoreActiveTrade(next);
+      }
+    },
+    [setStoreActiveTrade]
+  );
+
+  // Derive trades from line items + scope items + selected trades.
+  // V2 emits ScopeItems via the rules engine; the legacy lineItems flow
+  // also still works. Show whatever surfaces.
   const trades = useMemo(() => {
     const tradeSet = new Set<string>();
-    for (const item of state.lineItems) {
-      tradeSet.add(item.trade);
-    }
+    for (const item of state.lineItems) tradeSet.add(item.trade);
+    for (const item of state.scopeItems) tradeSet.add(item.tradeId);
+    for (const t of state.projectMeta.selectedTrades ?? []) tradeSet.add(t);
     return Array.from(tradeSet);
-  }, [state.lineItems]);
+  }, [state.lineItems, state.scopeItems, state.projectMeta.selectedTrades]);
 
   // Auto-switch to first trade tab when calculation completes
   const prevStatusRef = useRef(state.analysisStatus);
@@ -154,37 +94,6 @@ function PlansTabContent({ onExpand, onCollapse, isExpanded }: PlansTabContentPr
     return subtotals;
   }, [state.lineItems]);
 
-  // Code notes from building model
-  const codeNotes = useMemo(() => {
-    if (!state.buildingModel) return {};
-    return generateCodeNotes(state.buildingModel);
-  }, [state.buildingModel]);
-
-  // Plan notes extracted from blueprint analysis
-  const planNotes = useMemo(() => {
-    const raw = state.buildingModel?.plan_notes as Record<string, string[]> | undefined;
-    if (!raw) return {};
-    const result: Record<string, NoteSection[]> = {};
-    for (const [trade, lines] of Object.entries(raw)) {
-      if (Array.isArray(lines) && lines.length > 0) {
-        result[trade] = [{ title: 'Plan Notes & Specifications', lines }];
-      }
-    }
-    return result;
-  }, [state.buildingModel]);
-
-  // Parse state abbreviation from project address
-  const parsedState = useMemo(
-    () => parseStateFromAddress(state.projectMeta.address),
-    [state.projectMeta.address]
-  );
-
-  // Climate zone from building model
-  const climateZone = useMemo(
-    () => (state.buildingModel?.climate_zone as string) || '',
-    [state.buildingModel]
-  );
-
   // Tab configuration
   const allTabs = ['project', ...trades, 'all'];
 
@@ -202,15 +111,6 @@ function PlansTabContent({ onExpand, onCollapse, isExpanded }: PlansTabContentPr
   if (!allTabs.includes(activeTrade)) {
     setActiveTrade('project');
   }
-
-  // Gather notes for the active trade tab
-  const activePlanNotes = [
-    ...(planNotes[activeTrade] || []),
-    ...(planNotes['general'] || []),
-  ];
-  const activeCodeNotes = codeNotes[activeTrade] || [];
-  const activeTradeKnowledge = generateTradeKnowledge(activeTrade);
-  const activeLocationNotes = generateLocationNotes(activeTrade, parsedState, climateZone);
 
   return (
     <div className="flex flex-col h-full">
@@ -247,72 +147,15 @@ function PlansTabContent({ onExpand, onCollapse, isExpanded }: PlansTabContentPr
         )}
       </div>
 
-      {/* Content area */}
+      {/* Content area.
+          Trade-specific tabs render TakeoffPanel scoped to that trade
+          (via activeTradeId sync above). The "all" tab keeps the legacy
+          SpreadsheetTable for any line items still in the lineItems flow. */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {activeTrade === 'project' ? (
-          <ProjectDescriptionPanel />
-        ) : activeTrade === 'all' ? (
+        {activeTrade === 'all' ? (
           <SpreadsheetTable />
         ) : (
-          <div className="flex flex-col">
-            {/* Spreadsheet FIRST */}
-            <SpreadsheetTable tradeFilter={activeTrade} />
-
-            {/* Notes BELOW — collapsible sections */}
-            {activePlanNotes.length > 0 && (
-              <CollapsibleSection
-                title="Plan Notes & Specifications"
-                defaultOpen
-                bg="bg-amber-50/60"
-                headerColor="text-amber-700"
-              >
-                <NoteCards
-                  notes={activePlanNotes}
-                  cardBg="bg-amber-50"
-                  cardBorder="border-amber-200"
-                />
-              </CollapsibleSection>
-            )}
-
-            {activeCodeNotes.length > 0 && (
-              <CollapsibleSection
-                title="Building Code Notes"
-                defaultOpen
-                bg="bg-gray-50"
-                headerColor="text-gray-500"
-              >
-                <NoteCards notes={activeCodeNotes} />
-              </CollapsibleSection>
-            )}
-
-            {activeTradeKnowledge.length > 0 && (
-              <CollapsibleSection
-                title="Trade Best Practices"
-                bg="bg-indigo-50/50"
-                headerColor="text-indigo-600"
-              >
-                <NoteCards
-                  notes={activeTradeKnowledge}
-                  cardBg="bg-indigo-50"
-                  cardBorder="border-indigo-200"
-                />
-              </CollapsibleSection>
-            )}
-
-            {activeLocationNotes.length > 0 && (
-              <CollapsibleSection
-                title="Location & Climate Considerations"
-                bg="bg-emerald-50/50"
-                headerColor="text-emerald-700"
-              >
-                <NoteCards
-                  notes={activeLocationNotes}
-                  cardBg="bg-emerald-50"
-                  cardBorder="border-emerald-200"
-                />
-              </CollapsibleSection>
-            )}
-          </div>
+          <TakeoffPanel />
         )}
       </div>
     </div>

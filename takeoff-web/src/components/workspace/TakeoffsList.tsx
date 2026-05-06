@@ -112,7 +112,7 @@ function TradeGroup({
     spreadsheetItem.trade = m.trade;
     spreadsheetItem.isUserAdded = true;
 
-    addLineItem(spreadsheetItem, rawItem);
+    addLineItem(spreadsheetItem);
     updateMeasurement(m.id, { addedToEstimate: true });
   }, [addLineItem, updateMeasurement]);
 

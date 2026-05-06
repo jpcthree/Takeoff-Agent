@@ -5,7 +5,6 @@ import { Plus, Download, ChevronsDownUp, ChevronsUpDown, Loader2 } from 'lucide-
 import { Button } from '@/components/ui/Button';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { exportXlsx, getTradeLabel } from '@/lib/api/python-service';
-import { generateCodeNotes } from '@/lib/utils/building-code-notes';
 
 interface SpreadsheetToolbarProps {
   trades: string[];
@@ -27,35 +26,36 @@ function SpreadsheetToolbar({
   const { state } = useProjectStore();
 
   const handleExport = useCallback(async () => {
-    if (state.rawLineItems.length === 0) return;
+    if (state.lineItems.length === 0) return;
     setIsExporting(true);
     try {
-      // Build export options based on project type
-      const options = state.projectType === 'address'
-        ? {
-            notes: state.propertyNotes,
-            insulation_notes: state.insulationNotes,
-            images: state.propertyImages,
-          }
-        : {
-            // Plans mode: include building model for project description sheet + code notes per trade
-            building_model: state.buildingModel || undefined,
-            code_notes: state.buildingModel ? generateCodeNotes(state.buildingModel) : undefined,
-          };
+      // Convert SpreadsheetLineItems to LineItemDict format for export
+      const exportItems = state.lineItems.map((item) => ({
+        trade: item.trade,
+        category: item.category || '',
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        material_unit_cost: item.unitCost,
+        material_total: item.materialTotal,
+        labor_hours: 0,
+        labor_rate: item.laborRatePct,
+        labor_total: item.laborTotal,
+        line_total: item.amount,
+        sheets: item.trade === 'drywall' ? 1 : undefined,
+      }));
 
       await exportXlsx(
-        state.rawLineItems,
+        exportItems,
         state.projectMeta.name || 'Estimate',
         state.projectMeta.address,
-        undefined,
-        options
       );
     } catch (err) {
       console.error('Export failed:', err);
     } finally {
       setIsExporting(false);
     }
-  }, [state.rawLineItems, state.projectMeta, state.projectType, state.propertyNotes, state.insulationNotes, state.propertyImages, state.buildingModel]);
+  }, [state.lineItems, state.projectMeta]);
 
   const toggleTrade = (trade: string) => {
     const current = visibleTrades ?? new Set(trades);
@@ -82,7 +82,7 @@ function SpreadsheetToolbar({
         variant="secondary"
         icon={isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
         onClick={handleExport}
-        disabled={state.rawLineItems.length === 0 || isExporting}
+        disabled={state.lineItems.length === 0 || isExporting}
       >
         Export .xlsx
       </Button>

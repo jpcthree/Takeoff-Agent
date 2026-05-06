@@ -6,7 +6,16 @@
 
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
 import type { Measurement } from '@/lib/types/measurement';
+import { semanticTagFor, defaultTradeAssociations } from '@/lib/types/measurement';
 import type { ScaleInfo } from '@/lib/utils/scale-detection';
+import type { SheetManifest } from '@/lib/types/sheet-manifest';
+import type {
+  Assumption,
+  OpenQuestion,
+  Inconsistency,
+  ScopeItem,
+  ConversationPhase,
+} from '@/lib/types/project';
 
 // ---------------------------------------------------------------------------
 // Key helpers
@@ -39,28 +48,6 @@ export function loadLineItemsLocal(projectId: string): SpreadsheetLineItem[] | n
 }
 
 // ---------------------------------------------------------------------------
-// Building Model
-// ---------------------------------------------------------------------------
-
-export function saveBuildingModelLocal(projectId: string, model: Record<string, unknown>): void {
-  try {
-    localStorage.setItem(projectKey(projectId, 'buildingModel'), JSON.stringify(model));
-  } catch (e) {
-    console.warn('Failed to save building model to localStorage:', e);
-  }
-}
-
-export function loadBuildingModelLocal(projectId: string): Record<string, unknown> | null {
-  try {
-    const raw = localStorage.getItem(projectKey(projectId, 'buildingModel'));
-    if (!raw) return null;
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Measurements
 // ---------------------------------------------------------------------------
 
@@ -76,7 +63,14 @@ export function loadMeasurementsLocal(projectId: string): Measurement[] | null {
   try {
     const raw = localStorage.getItem(projectKey(projectId, 'measurements'));
     if (!raw) return null;
-    return JSON.parse(raw) as Measurement[];
+    const parsed = JSON.parse(raw) as Measurement[];
+    // Backfill v2 fields on legacy entries
+    return parsed.map((m) => ({
+      ...m,
+      semanticTag: m.semanticTag ?? semanticTagFor(m.trade, m.measurementType, m.mode),
+      tradeAssociations: m.tradeAssociations ?? defaultTradeAssociations(m.trade),
+      sourceSheetPage: m.sourceSheetPage ?? m.pageNumber,
+    }));
   } catch {
     return null;
   }
@@ -164,11 +158,81 @@ export function loadAnalysisStatusLocal(projectId: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Sheet Manifest (Layer 1)
+// ---------------------------------------------------------------------------
+
+export function saveSheetManifestLocal(projectId: string, manifest: SheetManifest): void {
+  try {
+    localStorage.setItem(projectKey(projectId, 'sheetManifest'), JSON.stringify(manifest));
+  } catch (e) {
+    console.warn('Failed to save sheet manifest to localStorage:', e);
+  }
+}
+
+export function loadSheetManifestLocal(projectId: string): SheetManifest | null {
+  try {
+    const raw = localStorage.getItem(projectKey(projectId, 'sheetManifest'));
+    if (!raw) return null;
+    return JSON.parse(raw) as SheetManifest;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// V2 conversation entities (Layer 3)
+// ---------------------------------------------------------------------------
+
+function saveJson<T>(projectId: string, suffix: string, value: T): void {
+  try {
+    localStorage.setItem(projectKey(projectId, suffix), JSON.stringify(value));
+  } catch (e) {
+    console.warn(`Failed to save ${suffix} to localStorage:`, e);
+  }
+}
+
+function loadJson<T>(projectId: string, suffix: string): T | null {
+  try {
+    const raw = localStorage.getItem(projectKey(projectId, suffix));
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export const saveAssumptionsLocal = (id: string, v: Assumption[]) => saveJson(id, 'assumptions', v);
+export const loadAssumptionsLocal = (id: string) => loadJson<Assumption[]>(id, 'assumptions');
+
+export const saveOpenQuestionsLocal = (id: string, v: OpenQuestion[]) => saveJson(id, 'openQuestions', v);
+export const loadOpenQuestionsLocal = (id: string) => loadJson<OpenQuestion[]>(id, 'openQuestions');
+
+export const saveInconsistenciesLocal = (id: string, v: Inconsistency[]) => saveJson(id, 'inconsistencies', v);
+export const loadInconsistenciesLocal = (id: string) => loadJson<Inconsistency[]>(id, 'inconsistencies');
+
+export const saveScopeItemsLocal = (id: string, v: ScopeItem[]) => saveJson(id, 'scopeItems', v);
+export const loadScopeItemsLocal = (id: string) => loadJson<ScopeItem[]>(id, 'scopeItems');
+
+export const saveConversationPhaseLocal = (id: string, v: ConversationPhase) =>
+  saveJson(id, 'conversationPhase', v);
+export const loadConversationPhaseLocal = (id: string) =>
+  loadJson<ConversationPhase>(id, 'conversationPhase');
+
+export const saveActiveTradeLocal = (id: string, v: string | null) =>
+  saveJson(id, 'activeTrade', v);
+export const loadActiveTradeLocal = (id: string) => loadJson<string | null>(id, 'activeTrade');
+
+// ---------------------------------------------------------------------------
 // Delete all project data
 // ---------------------------------------------------------------------------
 
 export function deleteProjectDataLocal(projectId: string): void {
-  const suffixes = ['lineItems', 'buildingModel', 'measurements', 'pageScales', 'scaleOverrides', 'pageClassifications', 'analysisStatus'];
+  const suffixes = [
+    'lineItems', 'measurements', 'pageScales', 'scaleOverrides',
+    'pageClassifications', 'analysisStatus', 'sheetManifest',
+    'assumptions', 'openQuestions', 'inconsistencies', 'scopeItems',
+    'conversationPhase', 'activeTrade', 'conversationHistory',
+  ];
   for (const suffix of suffixes) {
     try {
       localStorage.removeItem(projectKey(projectId, suffix));

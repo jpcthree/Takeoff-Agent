@@ -19,8 +19,40 @@ export interface ScaleInfo {
   scaleString: string;
   /** Multiplier from paper inches to real inches */
   scaleFactor: number;
+  /**
+   * Where the scale value came from. Drives the calibrationMethod mapping
+   * exposed to the rules engine and UI confidence indicator.
+   */
   source: 'text_regex' | 'claude_classification' | 'both' | 'user_override';
   confidence: 'high' | 'medium' | 'low';
+  /**
+   * Canonical calibration method per the v2 product plan. Derived from
+   * `source` for legacy entries; v2 will add 'known_dimension' and
+   * 'known_feature' when those calibration flows ship.
+   */
+  calibrationMethod?: 'title_block' | 'known_dimension' | 'known_feature' | 'user_override';
+}
+
+/**
+ * Map a ScaleInfo to its canonical calibration method. Falls back to the
+ * `source` field for entries written before v2.
+ */
+export function calibrationMethodOf(info: ScaleInfo): 'title_block' | 'known_dimension' | 'known_feature' | 'user_override' {
+  if (info.calibrationMethod) return info.calibrationMethod;
+  if (info.source === 'user_override') return 'user_override';
+  return 'title_block';
+}
+
+/**
+ * Tailwind-friendly color for the calibration confidence indicator.
+ * green = high (good), amber = medium (verify), red = low (override needed).
+ */
+export function calibrationStatusColor(info: ScaleInfo | null | undefined): 'green' | 'amber' | 'red' | 'gray' {
+  if (!info) return 'gray';
+  if (info.source === 'user_override') return 'green';
+  if (info.confidence === 'high') return 'green';
+  if (info.confidence === 'medium') return 'amber';
+  return 'red';
 }
 
 export interface Dimension {
@@ -310,6 +342,7 @@ export function detectScalesFromText(pages: ExtractedPageText[]): ScaleInfo[] {
         scaleFactor: bestMatch.scaleFactor,
         source: 'text_regex',
         confidence: bestMatch.confidence,
+        calibrationMethod: 'title_block',
       });
     }
   }

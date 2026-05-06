@@ -2,9 +2,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Check, Undo2, Ruler, Edit3 } from 'lucide-react';
-import { MEASUREMENT_TYPES, getTradeColor } from '@/lib/types/measurement';
-import { parseScaleString } from '@/lib/utils/scale-detection';
+import { MEASUREMENT_TYPES, getTradeColor, V1_TRADES } from '@/lib/types/measurement';
+import { parseScaleString, calibrationStatusColor } from '@/lib/utils/scale-detection';
 import type { ActiveMeasurementTool, MeasurementMode } from '@/lib/types/measurement';
+import type { ScaleInfo } from '@/lib/utils/scale-detection';
 import type { MeasurementToolState } from '@/hooks/useMeasurementTool';
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,8 @@ interface MeasurementToolbarProps {
   scaleString: string;
   /** Scale factor for the current page */
   scaleFactor: number;
+  /** Full scale info (drives the calibration confidence indicator) */
+  scaleInfo?: ScaleInfo | null;
   /** Pending measurement result (available during naming step) */
   pendingResult?: { value: number; unit: string } | null;
   /** Linear feet of pending measurement (for surface_area) */
@@ -62,12 +65,16 @@ const COMMON_SCALES = [
 
 // ---------------------------------------------------------------------------
 // Available trades for measurement
+// V1 ships insulation + gutters only. Other trades stay in MEASUREMENT_TYPES
+// for legacy data but are hidden from the picker.
 // ---------------------------------------------------------------------------
 
-const TRADE_OPTIONS = Object.keys(MEASUREMENT_TYPES).map((id) => ({
-  id,
-  label: id.charAt(0).toUpperCase() + id.slice(1),
-}));
+const TRADE_OPTIONS = (V1_TRADES as readonly string[])
+  .filter((id) => MEASUREMENT_TYPES[id])
+  .map((id) => ({
+    id,
+    label: id.charAt(0).toUpperCase() + id.slice(1),
+  }));
 
 // ---------------------------------------------------------------------------
 // Component
@@ -80,6 +87,7 @@ function MeasurementToolbar({
   runningLabel,
   scaleString,
   scaleFactor,
+  scaleInfo,
   onStartTool,
   onFinish,
   onUndo,
@@ -178,6 +186,21 @@ function MeasurementToolbar({
 
   const tradeColor = activeTool ? getTradeColor(activeTool.trade) : '#6b7280';
 
+  // Calibration confidence indicator: green = high, amber = medium, red = low,
+  // gray = no scale set. Tooltip explains the source.
+  const calStatus = calibrationStatusColor(scaleInfo);
+  const CAL_DOT_CLASS: Record<typeof calStatus, string> = {
+    green: 'bg-green-500',
+    amber: 'bg-amber-500',
+    red: 'bg-red-500',
+    gray: 'bg-gray-300',
+  };
+  const calTooltip = !scaleInfo
+    ? 'No scale detected — set one before measuring'
+    : scaleInfo.source === 'user_override'
+      ? 'Scale set manually (high confidence)'
+      : `Detected from title block — ${scaleInfo.confidence} confidence`;
+
   // ── Scale editor (click on scale to override) ──
   const scaleDisplay = (
     <span className="flex items-center gap-1 shrink-0">
@@ -218,9 +241,10 @@ function MeasurementToolbar({
             setEditingScale(true);
             setScaleInput(scaleString);
           }}
-          className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-primary cursor-pointer"
-          title="Click to override scale"
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-primary cursor-pointer"
+          title={calTooltip}
         >
+          <span className={`inline-block w-2 h-2 rounded-full ${CAL_DOT_CLASS[calStatus]}`} aria-hidden="true" />
           {scaleString ? `Scale: ${scaleString}` : 'Set scale'}
           <Edit3 className="h-2.5 w-2.5" />
         </button>

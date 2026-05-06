@@ -1,0 +1,258 @@
+{
+  "tradeId": "insulation",
+  "displayName": "Insulation",
+  "version": 1,
+  "laborRateKey": "insulation_installer",
+
+  "promptExtension": "# Insulation — Trade Knowledge\n\nYou are estimating insulation work. The most common scopes are exterior wall insulation, attic floor insulation, vapor barrier, house wrap, and rim joist insulation.\n\n## Sheet types you care about (priority order)\n1. Wall sections — show R-value spec, wall depth\n2. Floor plans — perimeter for exterior wall area\n3. Building elevations — for window/door deductions and overall height\n4. Specifications — R-value requirements, vapor barrier specs, code references\n\n## Key measurements\n- Net exterior wall area (gross perimeter × wall height, minus openings)\n- Attic floor area\n- Linear feet of rim joist (often missed — confirm with the user)\n\n## Standard assumptions to confirm\n- Wall insulation type (R-13/R-19/R-21 batt, blown cellulose, open- or closed-cell spray foam)\n- Wall assembly: 2x4 or 2x6 — drives R-value cap and cost key\n- Attic insulation type and R-value\n- Vapor barrier inclusion\n- House wrap inclusion\n- Rim joist scope\n\n## Common inconsistencies to flag\n- Wall depth on plan doesn't match R-value spec (e.g., 2x4 wall with R-19 batt — won't fit)\n- Window/door areas in schedule don't match what's drawn on elevations\n- Vapor barrier shown on warm side vs. cold side based on climate zone\n\n## Code awareness (Front Range CO baseline, Climate Zone 5, 2021 IECC)\n- Ceiling: R-49\n- Wood-frame wall: R-20 cavity OR R-13+5 cavity+continuous\n- Floor: R-30\n- Slab edge: R-10, 2 ft depth\n\nIf the plan specifies less than code, flag it (likely a plan error). If more, don't flag — exceeding code is the owner's choice.",
+
+  "sheetRelevance": {
+    "primary": ["floor_plan", "wall_section", "building_section", "specifications"],
+    "secondary": ["reflected_ceiling_plan", "elevation", "detail", "wall_types", "structural"],
+    "irrelevant": ["site_plan", "roof_plan", "window_schedule", "door_schedule", "mechanical", "electrical", "plumbing"]
+  },
+
+  "requiredMeasurements": [
+    {
+      "tag": "exterior_wall_area",
+      "label": "Net exterior wall area",
+      "mode": "surface_area",
+      "preferredSheets": ["floor_plan", "wall_section"],
+      "priority": 1,
+      "bounds": { "min": 100, "max": 50000, "unit": "sf" }
+    },
+    {
+      "tag": "attic_floor_area",
+      "label": "Attic floor area",
+      "mode": "area",
+      "preferredSheets": ["floor_plan"],
+      "priority": 2,
+      "bounds": { "min": 0, "max": 20000, "unit": "sf" }
+    },
+    {
+      "tag": "rim_joist_lf",
+      "label": "Rim joist length",
+      "mode": "linear",
+      "preferredSheets": ["floor_plan"],
+      "priority": 5,
+      "bounds": { "min": 0, "max": 2000, "unit": "lf" }
+    }
+  ],
+
+  "requiredAssumptions": [
+    {
+      "key": "wall_insulation_type",
+      "prompt": "Wall insulation type?",
+      "default": "batt",
+      "options": [
+        { "value": "batt", "label": "Fiberglass batt" },
+        { "value": "blown_cellulose", "label": "Dense-pack cellulose" },
+        { "value": "spray_foam_open", "label": "Open-cell spray foam", "vars": { "wall_r_per_inch": 3.7 } },
+        { "value": "spray_foam_closed", "label": "Closed-cell spray foam", "vars": { "wall_r_per_inch": 7.0 } }
+      ]
+    },
+    {
+      "key": "wall_r_value",
+      "prompt": "Wall cavity R-value?",
+      "default": "19",
+      "options": [
+        { "value": "13", "label": "R-13", "vars": { "wall_r_value_num": 13 } },
+        { "value": "19", "label": "R-19", "vars": { "wall_r_value_num": 19 } },
+        { "value": "21", "label": "R-21", "vars": { "wall_r_value_num": 21 } }
+      ]
+    },
+    {
+      "key": "wall_assembly",
+      "prompt": "Wall stud assembly?",
+      "default": "2x6",
+      "options": [
+        { "value": "2x4", "label": "2x4 studs" },
+        { "value": "2x6", "label": "2x6 studs" }
+      ]
+    },
+    {
+      "key": "attic_insulation_type",
+      "prompt": "Attic insulation type?",
+      "default": "blown_cellulose",
+      "options": [
+        { "value": "blown_cellulose", "label": "Blown cellulose" },
+        { "value": "blown_fiberglass", "label": "Blown fiberglass" },
+        { "value": "batt", "label": "Fiberglass batt" },
+        { "value": "none", "label": "No attic insulation in scope" }
+      ]
+    },
+    {
+      "key": "attic_r_value",
+      "prompt": "Attic R-value?",
+      "default": "49",
+      "options": [
+        { "value": "38", "label": "R-38", "vars": { "attic_r_value_num": 38, "attic_bag_coverage_sf": 40 } },
+        { "value": "49", "label": "R-49", "vars": { "attic_r_value_num": 49, "attic_bag_coverage_sf": 32 } }
+      ]
+    },
+    {
+      "key": "vapor_barrier_required",
+      "prompt": "Vapor barrier required?",
+      "default": "no",
+      "options": [
+        { "value": "yes", "label": "Yes" },
+        { "value": "no", "label": "No" }
+      ]
+    },
+    {
+      "key": "house_wrap_required",
+      "prompt": "House wrap in scope?",
+      "default": "yes",
+      "options": [
+        { "value": "yes", "label": "Yes" },
+        { "value": "no", "label": "No" }
+      ]
+    },
+    {
+      "key": "rim_joist_in_scope",
+      "prompt": "Rim joist insulation in scope?",
+      "default": "no",
+      "options": [
+        { "value": "yes", "label": "Yes — closed-cell spray foam" },
+        { "value": "no", "label": "No" }
+      ]
+    }
+  ],
+
+  "scopeItems": [
+    {
+      "id": "ins_wall_batt",
+      "category": "Wall Insulation",
+      "description": "Exterior Wall Cavity - R-{wall_r_value} Fiberglass Batt ({wall_assembly})",
+      "unit": "sf",
+      "requiredMeasurements": ["exterior_wall_area"],
+      "applies": "wall_insulation_type == 'batt'",
+      "quantity": "exterior_wall_area * waste_factor",
+      "costKey": "batt_r{wall_r_value}_{wall_assembly}_15in",
+      "laborHours": "exterior_wall_area * 0.02",
+      "defaults": { "waste_factor": 1.05 }
+    },
+    {
+      "id": "ins_wall_blown",
+      "category": "Wall Insulation",
+      "description": "Exterior Wall Cavity - R-{wall_r_value} Dense-Pack Cellulose",
+      "unit": "bag",
+      "requiredMeasurements": ["exterior_wall_area"],
+      "applies": "wall_insulation_type == 'blown_cellulose'",
+      "quantity": "ceil((exterior_wall_area * waste_factor) / coverage_per_bag)",
+      "costKey": "blown_cellulose",
+      "laborHours": "exterior_wall_area * 0.025",
+      "defaults": { "waste_factor": 1.10, "coverage_per_bag": 28 }
+    },
+    {
+      "id": "ins_wall_spray_open",
+      "category": "Wall Insulation",
+      "description": "Exterior Wall Cavity - R-{wall_r_value} Open-Cell Spray Foam",
+      "unit": "bf",
+      "requiredMeasurements": ["exterior_wall_area"],
+      "applies": "wall_insulation_type == 'spray_foam_open'",
+      "quantity": "ceil(exterior_wall_area * waste_factor) * (wall_r_value_num / wall_r_per_inch)",
+      "costKey": "spray_foam_open_cell",
+      "laborHours": "exterior_wall_area * 0.04",
+      "defaults": { "waste_factor": 1.05 }
+    },
+    {
+      "id": "ins_wall_spray_closed",
+      "category": "Wall Insulation",
+      "description": "Exterior Wall Cavity - R-{wall_r_value} Closed-Cell Spray Foam",
+      "unit": "bf",
+      "requiredMeasurements": ["exterior_wall_area"],
+      "applies": "wall_insulation_type == 'spray_foam_closed'",
+      "quantity": "ceil(exterior_wall_area * waste_factor) * (wall_r_value_num / wall_r_per_inch)",
+      "costKey": "spray_foam_closed_cell",
+      "laborHours": "exterior_wall_area * 0.04",
+      "defaults": { "waste_factor": 1.05 }
+    },
+    {
+      "id": "ins_attic_blown_cellulose",
+      "category": "Attic Insulation",
+      "description": "Attic Floor - R-{attic_r_value} Blown-In Cellulose",
+      "unit": "bag",
+      "requiredMeasurements": ["attic_floor_area"],
+      "applies": "attic_insulation_type == 'blown_cellulose'",
+      "quantity": "ceil((attic_floor_area * waste_factor) / attic_bag_coverage_sf)",
+      "costKey": "blown_cellulose",
+      "laborHours": "attic_floor_area * 0.01",
+      "defaults": { "waste_factor": 1.10 }
+    },
+    {
+      "id": "ins_attic_blown_fiberglass",
+      "category": "Attic Insulation",
+      "description": "Attic Floor - R-{attic_r_value} Blown-In Fiberglass",
+      "unit": "bag",
+      "requiredMeasurements": ["attic_floor_area"],
+      "applies": "attic_insulation_type == 'blown_fiberglass'",
+      "quantity": "ceil((attic_floor_area * waste_factor) / attic_bag_coverage_sf)",
+      "costKey": "blown_fiberglass",
+      "laborHours": "attic_floor_area * 0.01",
+      "defaults": { "waste_factor": 1.10 }
+    },
+    {
+      "id": "ins_attic_batt",
+      "category": "Attic Insulation",
+      "description": "Attic Floor - R-{attic_r_value} Fiberglass Batt",
+      "unit": "sf",
+      "requiredMeasurements": ["attic_floor_area"],
+      "applies": "attic_insulation_type == 'batt'",
+      "quantity": "attic_floor_area * waste_factor",
+      "costKey": "batt_r38_2x12",
+      "laborHours": "attic_floor_area * 0.02",
+      "defaults": { "waste_factor": 1.05 }
+    },
+    {
+      "id": "ins_vapor_barrier",
+      "category": "Vapor Barrier",
+      "description": "Exterior Wall - 6 mil Poly Vapor Barrier",
+      "unit": "sf",
+      "requiredMeasurements": ["exterior_wall_area"],
+      "applies": "vapor_barrier_required == 'yes'",
+      "quantity": "exterior_wall_area * waste_factor",
+      "costKey": "vapor_barrier_6mil",
+      "laborHours": "exterior_wall_area * 0.005",
+      "defaults": { "waste_factor": 1.10 }
+    },
+    {
+      "id": "ins_house_wrap",
+      "category": "House Wrap",
+      "description": "Exterior Wall - House Wrap (Tyvek or equivalent)",
+      "unit": "sf",
+      "requiredMeasurements": ["exterior_wall_area"],
+      "applies": "house_wrap_required == 'yes'",
+      "quantity": "exterior_wall_area * waste_factor",
+      "costKey": "house_wrap_per_sf",
+      "laborHours": "exterior_wall_area * 0.01",
+      "defaults": { "waste_factor": 1.10 }
+    },
+    {
+      "id": "ins_rim_joist",
+      "category": "Rim Joist Insulation",
+      "description": "Rim/Band Joist - R-13 Closed-Cell Spray Foam",
+      "unit": "bf",
+      "requiredMeasurements": ["rim_joist_lf"],
+      "applies": "rim_joist_in_scope == 'yes'",
+      "quantity": "ceil(rim_joist_lf * height_ft * waste_factor) * (target_r / r_per_inch)",
+      "costKey": "spray_foam_closed_cell",
+      "laborHours": "rim_joist_lf * 0.06",
+      "defaults": { "waste_factor": 1.05, "height_ft": 0.77, "target_r": 13, "r_per_inch": 7.0 }
+    }
+  ],
+
+  "commonInconsistencies": [
+    "Wall thickness on plan doesn't match R-value spec (e.g., 2x4 wall with R-19 batt won't fit)",
+    "Window/door schedule areas don't match what's drawn on elevations",
+    "Vapor barrier shown on cold side instead of warm side (climate-zone dependent)",
+    "Attic insulation R-value below 2021 IECC R-49 minimum (Climate Zone 5)"
+  ],
+
+  "glossary": {
+    "BF": "Board foot — 1 sq ft × 1 inch thick. Used to price spray foam.",
+    "Cavity insulation": "Insulation installed between studs (vs. continuous insulation on the exterior).",
+    "Continuous insulation (CI)": "Rigid foam applied to the exterior of the sheathing, uninterrupted by studs.",
+    "Net wall area": "Gross wall area minus window and door openings."
+  }
+}

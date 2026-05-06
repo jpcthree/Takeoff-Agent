@@ -158,7 +158,8 @@ function CompletedMeasurement({
         );
       })()}
 
-      {/* Name label below result */}
+      {/* Name label below result. Tooltip exposes semantic tag for debugging
+          and to make agent/rules-engine wiring visible. */}
       {m.name && m.points.length >= 2 && (() => {
         const cx = m.points.reduce((s, p) => s + p.x, 0) / m.points.length;
         const cy = m.points.reduce((s, p) => s + p.y, 0) / m.points.length;
@@ -173,6 +174,7 @@ function CompletedMeasurement({
             fill="#374151"
             style={{ userSelect: 'none', pointerEvents: 'none' }}
           >
+            <title>{m.semanticTag ? `${m.name} (${m.semanticTag})` : m.name}</title>
             {m.name}
           </text>
         );

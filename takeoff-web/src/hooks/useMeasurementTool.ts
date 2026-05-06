@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import type { MeasurementPoint, MeasurementMode, ActiveMeasurementTool } from '@/lib/types/measurement';
+import type { MeasurementPoint, ActiveMeasurementTool } from '@/lib/types/measurement';
+import { semanticTagFor, defaultTradeAssociations } from '@/lib/types/measurement';
 import { computeMeasurementResult, snapToAxis } from '@/lib/utils/measurement-math';
 import { useProjectStore } from './useProjectStore';
 
@@ -187,8 +188,11 @@ export function useMeasurementTool(
         name,
         trade: activeTool.trade,
         measurementType: activeTool.measurementType,
+        semanticTag: semanticTagFor(activeTool.trade, activeTool.measurementType, activeTool.mode),
+        tradeAssociations: defaultTradeAssociations(activeTool.trade),
         mode: activeTool.mode,
         pageNumber,
+        sourceSheetPage: pageNumber,
         points: activePoints,
         isClosed,
         heightFt: finalHeight,

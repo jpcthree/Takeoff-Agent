@@ -1,0 +1,258 @@
+{
+  "tradeId": "gutters",
+  "displayName": "Gutters",
+  "version": 1,
+  "laborRateKey": "gutter_installer",
+
+  "promptExtension": "# Gutters — Trade Knowledge\n\nYou are estimating gutter work. Common scopes are new install, replacement (with demo and haul), and add-ons like leaf protection.\n\n## Sheet types you care about (priority order)\n1. Roof plan — fascia perimeter and downspout discharge points\n2. Front and side elevations — visual confirmation, eave heights\n3. Sections — fascia detail (wood vs. metal, dimension)\n4. Site plan — downspout discharge / drainage requirements\n\n## Key measurements\n- Linear feet of eave per elevation (where the gutter goes)\n- Number of downspouts (one per ~30-40 LF of gutter, or per architectural break)\n- Outside / inside corners (for miter counts)\n\n## Standard assumptions to confirm\n- Gutter size: 5\" K-style typical residential, 6\" for larger roofs / hail-prone climates (Front Range CO often justifies 6\")\n- Material: aluminum (.027 / .032), steel, copper\n- Color (white, brown, bronze, custom)\n- Downspout size: 2x3 typical, 3x4 for 6\" gutter or large drainage\n- Gutter guards (mesh, foam, reverse curve, none)\n- Demo and haul of existing\n\n## Common inconsistencies to flag\n- Roof plan and elevations disagree on eave configuration (gable vs hip)\n- Eave heights very different across elevations (affects ladder/lift labor)\n- No provision for downspout discharge at one or more locations\n\n## Estimating notes\n- Aluminum K-style 5\" Front Range pricing: ~$8-12/LF installed for basic; ~$10-15/LF for 6\". Color upcharge 10-25%.\n- Demo and haul typically ~$1-2/LF.\n- Crew rule of thumb: 60-90 LF per crew-hour for installation only on simple eaves.",
+
+  "sheetRelevance": {
+    "primary": ["roof_plan", "elevation"],
+    "secondary": ["site_plan", "wall_section", "building_section", "detail", "specifications"],
+    "irrelevant": ["floor_plan", "reflected_ceiling_plan", "window_schedule", "door_schedule", "wall_types", "mechanical", "electrical", "plumbing", "structural"]
+  },
+
+  "requiredMeasurements": [
+    {
+      "tag": "eave_run_lf",
+      "label": "Total eave linear feet",
+      "mode": "linear",
+      "preferredSheets": ["roof_plan", "elevation"],
+      "priority": 1,
+      "bounds": { "min": 20, "max": 1000, "unit": "lf" }
+    },
+    {
+      "tag": "gutters_downspout_location",
+      "label": "Number of downspout locations",
+      "mode": "linear",
+      "preferredSheets": ["roof_plan", "elevation"],
+      "priority": 2,
+      "bounds": { "min": 1, "max": 30, "unit": "count" }
+    }
+  ],
+
+  "requiredAssumptions": [
+    {
+      "key": "gutter_size",
+      "prompt": "Gutter size?",
+      "default": "6in",
+      "options": [
+        { "value": "5in", "label": "5 inch K-style" },
+        { "value": "6in", "label": "6 inch K-style" }
+      ]
+    },
+    {
+      "key": "gutter_material",
+      "prompt": "Material?",
+      "default": "aluminum",
+      "options": [
+        { "value": "aluminum", "label": "Aluminum (.027 or .032)" },
+        { "value": "steel", "label": "Steel" },
+        { "value": "copper", "label": "Copper (premium)" },
+        { "value": "galvalume", "label": "Galvalume" }
+      ]
+    },
+    {
+      "key": "downspout_size",
+      "prompt": "Downspout size?",
+      "default": "3x4",
+      "options": [
+        { "value": "2x3", "label": "2x3 (standard with 5\" gutter)" },
+        { "value": "3x4", "label": "3x4 (recommended with 6\" gutter)" }
+      ]
+    },
+    {
+      "key": "downspout_avg_length",
+      "prompt": "Average downspout length (eave to grade)?",
+      "default": "12",
+      "options": [
+        { "value": "8", "label": "Single story (~8 ft)", "vars": { "downspout_avg_length_ft": 8 } },
+        { "value": "12", "label": "Single story tall / split level (~12 ft)", "vars": { "downspout_avg_length_ft": 12 } },
+        { "value": "18", "label": "Two story (~18 ft)", "vars": { "downspout_avg_length_ft": 18 } },
+        { "value": "26", "label": "Three story (~26 ft)", "vars": { "downspout_avg_length_ft": 26 } }
+      ]
+    },
+    {
+      "key": "outside_corner_count",
+      "prompt": "Outside corner count?",
+      "default": "4",
+      "options": [
+        { "value": "0", "label": "0", "vars": { "outside_corners": 0 } },
+        { "value": "2", "label": "2", "vars": { "outside_corners": 2 } },
+        { "value": "4", "label": "4 (typical rectangular roof)", "vars": { "outside_corners": 4 } },
+        { "value": "6", "label": "6", "vars": { "outside_corners": 6 } },
+        { "value": "8", "label": "8 (complex roof)", "vars": { "outside_corners": 8 } }
+      ]
+    },
+    {
+      "key": "inside_corner_count",
+      "prompt": "Inside corner count?",
+      "default": "0",
+      "options": [
+        { "value": "0", "label": "0", "vars": { "inside_corners": 0 } },
+        { "value": "2", "label": "2", "vars": { "inside_corners": 2 } },
+        { "value": "4", "label": "4", "vars": { "inside_corners": 4 } }
+      ]
+    },
+    {
+      "key": "gutter_guards",
+      "prompt": "Gutter guards in scope?",
+      "default": "none",
+      "options": [
+        { "value": "none", "label": "None" },
+        { "value": "mesh", "label": "Mesh / micro-mesh" }
+      ]
+    },
+    {
+      "key": "demo_existing",
+      "prompt": "Demo and haul existing gutter?",
+      "default": "no",
+      "options": [
+        { "value": "yes", "label": "Yes" },
+        { "value": "no", "label": "No (new construction)" }
+      ]
+    }
+  ],
+
+  "scopeItems": [
+    {
+      "id": "gut_run",
+      "category": "Gutters",
+      "description": "{gutter_size} K-style {gutter_material} gutter",
+      "unit": "lf",
+      "requiredMeasurements": ["eave_run_lf"],
+      "quantity": "eave_run_lf * waste_factor",
+      "costKey": "gutter_{gutter_size}_{gutter_material}",
+      "laborHours": "eave_run_lf / production_rate",
+      "defaults": { "waste_factor": 1.05, "production_rate": 75 }
+    },
+    {
+      "id": "gut_hangers",
+      "category": "Gutters",
+      "description": "Hidden hangers (24\" OC)",
+      "unit": "ea",
+      "requiredMeasurements": ["eave_run_lf"],
+      "quantity": "ceil(eave_run_lf / 2)",
+      "costKey": "gutter_hanger",
+      "laborHours": "0",
+      "defaults": {}
+    },
+    {
+      "id": "gut_end_caps",
+      "category": "Gutters",
+      "description": "End caps",
+      "unit": "ea",
+      "requiredMeasurements": ["eave_run_lf"],
+      "quantity": "max(2, outside_corners == 0 ? 4 : 2)",
+      "costKey": "end_cap",
+      "laborHours": "0",
+      "defaults": {}
+    },
+    {
+      "id": "gut_outside_miter",
+      "category": "Gutters",
+      "description": "Outside miters",
+      "unit": "ea",
+      "requiredMeasurements": ["eave_run_lf"],
+      "applies": "outside_corners > 0",
+      "quantity": "outside_corners",
+      "costKey": "outside_miter",
+      "laborHours": "outside_corners * 0.5",
+      "defaults": {}
+    },
+    {
+      "id": "gut_inside_miter",
+      "category": "Gutters",
+      "description": "Inside miters",
+      "unit": "ea",
+      "requiredMeasurements": ["eave_run_lf"],
+      "applies": "inside_corners > 0",
+      "quantity": "inside_corners",
+      "costKey": "inside_miter",
+      "laborHours": "inside_corners * 0.6",
+      "defaults": {}
+    },
+    {
+      "id": "gut_downspouts",
+      "category": "Downspouts",
+      "description": "{downspout_size} {gutter_material} downspouts ({downspout_avg_length_ft}' avg)",
+      "unit": "ea",
+      "requiredMeasurements": ["gutters_downspout_location"],
+      "quantity": "ceil(gutters_downspout_location * (downspout_avg_length_ft / 10))",
+      "costKey": "downspout_{downspout_size}_{gutter_material}",
+      "laborHours": "gutters_downspout_location * 0.5",
+      "defaults": {}
+    },
+    {
+      "id": "gut_outlets",
+      "category": "Downspouts",
+      "description": "Outlet drops (one per downspout)",
+      "unit": "ea",
+      "requiredMeasurements": ["gutters_downspout_location"],
+      "quantity": "gutters_downspout_location",
+      "costKey": "outlet_drop",
+      "laborHours": "0",
+      "defaults": {}
+    },
+    {
+      "id": "gut_elbows",
+      "category": "Downspouts",
+      "description": "Downspout elbows (2 per downspout)",
+      "unit": "ea",
+      "requiredMeasurements": ["gutters_downspout_location"],
+      "quantity": "gutters_downspout_location * 2",
+      "costKey": "downspout_elbow",
+      "laborHours": "0",
+      "defaults": {}
+    },
+    {
+      "id": "gut_straps",
+      "category": "Downspouts",
+      "description": "Downspout straps (1 per ~5 ft)",
+      "unit": "ea",
+      "requiredMeasurements": ["gutters_downspout_location"],
+      "quantity": "ceil(gutters_downspout_location * downspout_avg_length_ft / 5)",
+      "costKey": "downspout_strap",
+      "laborHours": "0",
+      "defaults": {}
+    },
+    {
+      "id": "gut_guards_mesh",
+      "category": "Gutter Guards",
+      "description": "Mesh gutter guards",
+      "unit": "lf",
+      "requiredMeasurements": ["eave_run_lf"],
+      "applies": "gutter_guards == 'mesh'",
+      "quantity": "eave_run_lf",
+      "unitCost": "4.00",
+      "laborHours": "eave_run_lf / production_rate",
+      "defaults": { "production_rate": 100 }
+    },
+    {
+      "id": "gut_demo_haul",
+      "category": "Demo",
+      "description": "Demo and haul existing gutter",
+      "unit": "lf",
+      "requiredMeasurements": ["eave_run_lf"],
+      "applies": "demo_existing == 'yes'",
+      "quantity": "eave_run_lf",
+      "unitCost": "0.50",
+      "laborHours": "eave_run_lf / 150",
+      "defaults": {}
+    }
+  ],
+
+  "commonInconsistencies": [
+    "Roof plan and elevations disagree on eave configuration (gable vs hip)",
+    "Eave heights vary widely across elevations (affects ladder/lift labor)",
+    "No drainage provision at one or more downspout discharge points",
+    "Gutter spec on plan (size/material/color) and customer expectations may not match"
+  ],
+
+  "glossary": {
+    "K-style": "Most common residential gutter profile, with a flat back and decorative front face shaped like the letter K.",
+    "Half-round": "Rounded gutter profile, common on historic or higher-end homes.",
+    "Outlet drop": "The cut-out and fitting at each downspout location where water exits the gutter.",
+    "Hidden hanger": "Bracket installed inside the gutter that screws into the fascia; the modern standard."
+  }
+}

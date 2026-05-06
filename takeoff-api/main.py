@@ -21,12 +21,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from routers import calculate, pdf, export, estimate  # noqa: E402
+from routers import pdf, export  # noqa: E402
 
 app = FastAPI(
     title="Takeoff Agent API",
-    description="Construction takeoff calculation, PDF processing, and Excel export",
-    version="1.0.0",
+    description="Construction takeoff — PDF processing and Excel export",
+    version="2.0.0",
 )
 
 # CORS — allow the Next.js frontend (local + production)
@@ -45,10 +45,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(calculate.router, prefix="/calculate", tags=["Calculate"])
 app.include_router(pdf.router, prefix="/pdf", tags=["PDF"])
 app.include_router(export.router, prefix="/export", tags=["Export"])
-app.include_router(estimate.router, prefix="/estimate", tags=["Estimate"])
 
 
 @app.get("/")
@@ -69,46 +67,6 @@ async def health():
         "python_path_entries": len(sys.path),
     }
 
-
-@app.get("/debug/attom-test")
-async def debug_attom_test():
-    """Test ATTOM API directly on production."""
-    import traceback
-    import requests as req
-    try:
-        from property_lookup import _load_api_keys
-        keys = _load_api_keys()
-        attom_key = keys.get("attom_api_key", "")
-
-        # Raw API call to bypass any function-level issues
-        headers = {"apikey": attom_key, "Accept": "application/json"}
-        resp = req.get(
-            "https://api.gateway.attomdata.com/propertyapi/v1.0.0/property/expandedprofile",
-            params={"address1": "611 Branding Iron Ln", "address2": "Castle Rock, CO 80104"},
-            headers=headers,
-            timeout=15,
-        )
-        raw_status = resp.status_code
-        raw_body = resp.text[:1000]
-
-        # Also try calling the function
-        from property_lookup import _lookup_attom_property
-        result = _lookup_attom_property(
-            "611 Branding Iron Ln, Castle Rock, CO 80104",
-            attom_key,
-        )
-        return {
-            "attom_key_len": len(attom_key),
-            "attom_key_prefix": attom_key[:8] if attom_key else "",
-            "raw_api_status": raw_status,
-            "raw_api_body": raw_body,
-            "function_result": result,
-        }
-    except Exception as e:
-        return {
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-        }
 
 
 @app.get("/costs/default")

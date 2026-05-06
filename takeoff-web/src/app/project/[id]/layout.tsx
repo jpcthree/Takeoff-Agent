@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Download } from 'lucide-react';
+import { ArrowLeft, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 export default function WorkspaceLayout({
@@ -33,6 +33,21 @@ export default function WorkspaceLayout({
 
   const displayTitle = projectName || projectAddress || 'Project Workspace';
   const showAddress = projectName && projectAddress;
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Listen for the page-side handler to acknowledge completion
+  useEffect(() => {
+    const done = () => setIsExporting(false);
+    window.addEventListener('takeoff:export-done', done);
+    return () => window.removeEventListener('takeoff:export-done', done);
+  }, []);
+
+  const handleExport = useCallback(() => {
+    setIsExporting(true);
+    window.dispatchEvent(new CustomEvent('takeoff:export'));
+    // Failsafe: clear the spinner after 30s if no done event fires
+    setTimeout(() => setIsExporting(false), 30000);
+  }, []);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -58,7 +73,13 @@ export default function WorkspaceLayout({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button size="sm" variant="secondary" icon={<Download className="h-4 w-4" />}>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            onClick={handleExport}
+            disabled={isExporting}
+          >
             Export
           </Button>
         </div>

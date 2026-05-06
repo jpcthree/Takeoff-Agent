@@ -5,7 +5,6 @@
 
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
-import type { PropertyInfo } from '@/lib/api/python-service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,7 +94,6 @@ export async function saveLineItems(
 export async function saveProjectEstimateData(
   projectId: string,
   data: {
-    propertyData?: PropertyInfo;
     assumptions?: string[];
     inputMethod?: 'plans' | 'address';
   }
@@ -106,7 +104,6 @@ export async function saveProjectEstimateData(
 
   const supabase = createClient();
   const updates: Record<string, unknown> = {};
-  if (data.propertyData) updates.property_data = data.propertyData;
   if (data.assumptions) updates.assumptions = data.assumptions;
   if (data.inputMethod) updates.input_method = data.inputMethod;
 

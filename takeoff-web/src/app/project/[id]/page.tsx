@@ -9,35 +9,85 @@ import {
 } from 'react-resizable-panels';
 import { Minimize2 } from 'lucide-react';
 import { LeftPanel } from '@/components/workspace/LeftPanel';
-import { RetrofitWorkspace } from '@/components/workspace/RetrofitWorkspace';
 import { PlansTabContent } from '@/components/workspace/PlansTabContent';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ProjectStoreProvider, useProjectStore } from '@/hooks/useProjectStore';
+import { useSheetClassification } from '@/hooks/useSheetClassification';
+import { useV2Persistence } from '@/hooks/useV2Persistence';
 import { loadSavedEstimate } from '@/lib/data/estimate-persistence';
 import { calculateRow } from '@/lib/utils/calculations';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import {
   loadLineItemsLocal,
-  loadBuildingModelLocal,
   loadMeasurementsLocal,
   loadPageScalesLocal,
   loadPageClassificationsLocal,
   saveLineItemsLocal,
-  saveBuildingModelLocal,
   saveMeasurementsLocal,
   savePageScalesLocal,
   savePageClassificationsLocal,
 } from '@/lib/data/local-persistence';
 import type { SpreadsheetLineItem } from '@/lib/types/line-item';
+import { buildExportItems } from '@/lib/utils/export';
+import { exportXlsx } from '@/lib/api/python-service';
 
 /** Inner component that can use the store context */
 function WorkspaceInner() {
   const params = useParams();
-  const { state, dispatch, setProjectType, setLineItems, setBuildingModel } = useProjectStore();
-  const [inputMethod, setInputMethod] = useState<'plans' | 'address'>('plans');
+  const projectId = params?.id as string | undefined;
+  const { state, dispatch, setLineItems } = useProjectStore();
   const [expandedPanel, setExpandedPanel] = useState<'pdf' | 'estimate' | null>(null);
   const loadedRef = useRef(false);
+
+  // Auto-classify sheets when pages arrive (Layer 1 of v2 architecture).
+  // Surface its error through the existing state.error banner in PdfViewer.
+  const sheetClassification = useSheetClassification(projectId);
+  useEffect(() => {
+    if (sheetClassification.error) {
+      dispatch({ type: 'SET_ERROR', error: `Sheet classification: ${sheetClassification.error}` });
+    }
+  }, [sheetClassification.error, dispatch]);
+
+  // Hydrate + persist v2 conversation state (assumptions, scope items, phase, etc.)
+  useV2Persistence(projectId);
+
+  // Auto-pick the active trade from the project's selected trades. The agent
+  // operates on one trade at a time (sequential mode); this seeds the choice
+  // with the first selected trade so the user doesn't have to set it manually.
+  useEffect(() => {
+    if (state.activeTradeId) return;
+    const selected = state.projectMeta.selectedTrades;
+    if (selected && selected.length > 0) {
+      dispatch({ type: 'SET_ACTIVE_TRADE', tradeId: selected[0] });
+    }
+  }, [state.activeTradeId, state.projectMeta.selectedTrades, dispatch]);
+
+  // Listen for the layout's Export button. Builds a unified payload from
+  // v2 ScopeItems + legacy lineItems, hands it to the existing /export.
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const items = buildExportItems(state.scopeItems, state.lineItems);
+        if (items.length === 0) {
+          alert('No items to export. Take some measurements and confirm assumptions first.');
+          return;
+        }
+        await exportXlsx(
+          items,
+          state.projectMeta.name || 'Estimate',
+          state.projectMeta.address
+        );
+      } catch (err) {
+        console.error('Export failed:', err);
+        alert(`Export failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      } finally {
+        window.dispatchEvent(new CustomEvent('takeoff:export-done'));
+      }
+    };
+    window.addEventListener('takeoff:export', handler);
+    return () => window.removeEventListener('takeoff:export', handler);
+  }, [state.scopeItems, state.lineItems, state.projectMeta]);
 
   // Load project meta from sessionStorage (works for both local and Supabase projects)
   useEffect(() => {
@@ -57,15 +107,11 @@ function WorkspaceInner() {
             selectedTrades: meta.selectedTrades || [],
           },
         });
-        // Set the input method / project type
-        const method = meta.inputMethod === 'address' ? 'address' : 'plans';
-        setInputMethod(method);
-        setProjectType(method);
       }
     } catch {
       // Ignore parse errors
     }
-  }, [params?.id, dispatch, setProjectType]);
+  }, [params?.id, dispatch]);
 
   // Load saved data on mount — localStorage first, then Supabase fallback
   useEffect(() => {
@@ -75,7 +121,6 @@ function WorkspaceInner() {
 
     // 1. Try localStorage first (always available, fast)
     const localItems = loadLineItemsLocal(id);
-    const localModel = loadBuildingModelLocal(id);
     const localMeasurements = loadMeasurementsLocal(id);
     const localScales = loadPageScalesLocal(id);
     const localClassifications = loadPageClassificationsLocal(id);
@@ -83,13 +128,8 @@ function WorkspaceInner() {
     let hasLocalData = false;
 
     if (localItems && localItems.length > 0) {
-      setLineItems(localItems, []);
+      setLineItems(localItems);
       dispatch({ type: 'SET_STATUS', status: 'ready' });
-      hasLocalData = true;
-    }
-
-    if (localModel) {
-      setBuildingModel(localModel);
       hasLocalData = true;
     }
 
@@ -138,7 +178,7 @@ function WorkspaceInner() {
           };
         });
 
-        setLineItems(spreadsheetItems, []);
+        setLineItems(spreadsheetItems);
         dispatch({ type: 'SET_STATUS', status: 'ready' });
       }).catch((err) => {
         console.warn('Failed to load saved estimate:', err);
@@ -155,15 +195,6 @@ function WorkspaceInner() {
       saveLineItemsLocal(id, state.lineItems);
     }
   }, [params?.id, state.lineItems]);
-
-  useEffect(() => {
-    const id = params?.id as string;
-    if (!id || !loadedRef.current) return;
-
-    if (state.buildingModel) {
-      saveBuildingModelLocal(id, state.buildingModel);
-    }
-  }, [params?.id, state.buildingModel]);
 
   useEffect(() => {
     const id = params?.id as string;
@@ -209,17 +240,6 @@ function WorkspaceInner() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [expandedPanel]);
-
-  const isAddressMode = inputMethod === 'address';
-
-  // Retrofit mode: full-page layout with property hero + trade tabs
-  if (isAddressMode) {
-    return (
-      <ErrorBoundary>
-        <RetrofitWorkspace />
-      </ErrorBoundary>
-    );
-  }
 
   // Expanded panel: full screen with a collapse button
   if (expandedPanel) {

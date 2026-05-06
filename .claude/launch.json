@@ -5,7 +5,8 @@
       "name": "takeoff-web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "takeoff-web"],
-      "port": 3000
+      "port": 3000,
+      "autoPort": true
     },
     {
       "name": "homeqb-frontend",
@@ -18,6 +19,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["http-server", "/tmp/fc-wireframes", "-p", "8080", "-c-1"],
       "port": 8080
+    },
+    {
+      "name": "cro-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "../CRO Platform/web"],
+      "port": 3002
     }
   ]
 }

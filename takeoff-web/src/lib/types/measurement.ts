@@ -19,13 +19,26 @@ export type MeasurementMode = 'linear' | 'area' | 'surface_area';
 export interface Measurement {
   id: string;
   name: string;                    // user-editable label
-  trade: string;                   // 'insulation', 'drywall', etc.
-  measurementType: string;         // 'exterior_wall', 'ceiling', 'roof_plane', etc.
+  trade: string;                   // 'insulation', 'gutters', etc.
+  measurementType: string;         // 'exterior_wall', 'eave_run', etc. (UI-facing key)
+  /**
+   * Canonical key the rules engine references in trade module formulas.
+   * Derived from `trade` + `measurementType` + `mode` (see semanticTagFor).
+   * Examples: 'exterior_wall_area', 'attic_floor_area', 'eave_run_lf'.
+   */
+  semanticTag: string;
+  /**
+   * Trades this measurement is relevant to. Allows shared registry across
+   * trades (e.g., eave_run measured once, used by gutters and roofing).
+   */
+  tradeAssociations: string[];
   mode: MeasurementMode;           // linear → LF, area → SF, surface_area → LF × height → SF
-  pageNumber: number;
+  pageNumber: number;              // PDF page number (1-indexed)
+  /** Alias for pageNumber kept in sync; used by agent and sheet manifest references. */
+  sourceSheetPage: number;
   points: MeasurementPoint[];      // click points in image-pixel coords
   isClosed: boolean;               // true for area/surface_area polygons
-  heightFt: number | null;         // wall height for surface_area (AI-suggested or user-entered)
+  heightFt: number | null;         // wall height for surface_area
   resultValue: number;             // computed LF or SF
   resultUnit: string;              // 'LF' or 'SF'
   scaleString: string;             // scale used at time of measurement
@@ -128,6 +141,68 @@ export const MEASUREMENT_TYPES: Record<string, MeasurementTypeOption[]> = {
 // ---------------------------------------------------------------------------
 // Trade Colors (for overlay rendering)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// V1 Trade Filter
+// V1 of the conversation-driven product supports insulation and gutters only.
+// Other trades remain in MEASUREMENT_TYPES for legacy data but are hidden in UI.
+// ---------------------------------------------------------------------------
+
+export const V1_TRADES = ['insulation', 'gutters'] as const;
+
+export function isV1Trade(trade: string): boolean {
+  return (V1_TRADES as readonly string[]).includes(trade);
+}
+
+// ---------------------------------------------------------------------------
+// Semantic Tags
+// Canonical keys the rules engine references in trade module formulas.
+// Stable across UI label changes; informed by the v2 product plan.
+// ---------------------------------------------------------------------------
+
+/** Map of (trade, measurementType) → semantic tag. */
+const SEMANTIC_TAG_MAP: Record<string, Record<string, string>> = {
+  insulation: {
+    exterior_wall: 'exterior_wall_area',
+    interior_wall: 'interior_wall_area',
+    ceiling: 'ceiling_area',
+    attic_floor: 'attic_floor_area',
+    floor: 'floor_area',
+    crawlspace_wall: 'crawlspace_wall_area',
+    crawlspace_floor: 'crawlspace_floor_area',
+    rim_joist: 'rim_joist_lf',
+  },
+  gutters: {
+    eave_run: 'eave_run_lf',
+    downspout: 'downspout_location',
+  },
+};
+
+/**
+ * Derive the canonical semantic tag for a measurement.
+ * Falls back to `<trade>_<measurementType>_<unit>` for unknown combos.
+ */
+export function semanticTagFor(
+  trade: string,
+  measurementType: string,
+  mode: MeasurementMode
+): string {
+  const tradeMap = SEMANTIC_TAG_MAP[trade];
+  if (tradeMap && tradeMap[measurementType]) {
+    return tradeMap[measurementType];
+  }
+  const unit = mode === 'linear' ? 'lf' : 'area';
+  return `${trade}_${measurementType}_${unit}`;
+}
+
+/**
+ * Default trade associations for a measurement. V1 keeps it simple (just
+ * the active trade). Phase D will extend this so shared measurements
+ * (e.g., eave_run) get tagged across multiple trades.
+ */
+export function defaultTradeAssociations(trade: string): string[] {
+  return [trade];
+}
 
 export const TRADE_COLORS: Record<string, string> = {
   insulation: '#f59e0b',  // amber
