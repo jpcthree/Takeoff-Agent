@@ -12,6 +12,13 @@ export interface ToolCall {
   input: Record<string, unknown>;
 }
 
+export interface ToolResult {
+  tool_use_id: string;
+  /** Stringified result fed back to Claude on the next turn */
+  content: string;
+  is_error?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -19,6 +26,8 @@ export interface ChatMessage {
   timestamp: string;
   /** Tool calls made by the assistant (populated after stream completes) */
   toolCalls?: ToolCall[];
+  /** Tool results paired to a previous turn's toolCalls; sent back to Claude */
+  toolResults?: ToolResult[];
 }
 
 /**
@@ -45,8 +54,13 @@ interface ProjectContext {
 }
 
 interface UseChatOptions {
-  /** Called when a stream completes with text and any tool calls. */
-  onStreamComplete?: (messageText: string, toolCalls: ToolCall[]) => void;
+  /**
+   * Execute a tool call and return the structured result that gets fed
+   * back to Claude on the next loop iteration. The result's `content`
+   * field is what Claude sees; it should be a compact, model-friendly
+   * string (JSON-stringified payload + summary, typically).
+   */
+  executeTool?: (toolCall: ToolCall) => Promise<ToolResult>;
   /** Project id used to scope conversation history in localStorage. Pass null/undefined to disable persistence. */
   projectId?: string | null;
 }
@@ -113,13 +127,80 @@ function loadHistory(projectId: string): ChatMessage[] | null {
 // Hook
 // ---------------------------------------------------------------------------
 
+/** Cap on agentic loop iterations per user turn. Anthropic best practice
+ *  is a hard ceiling so a misbehaving agent can't burn unbounded tokens. */
+const MAX_AGENT_LOOP_ITERATIONS = 8;
+
+/** Cap on stored conversation turns sent back to the model. Older turns are
+ *  trimmed from the API payload (still kept in localStorage / UI). */
+const MAX_API_HISTORY = 20;
+
+// ---------------------------------------------------------------------------
+// API message types (mirror Anthropic's content-block shape)
+// ---------------------------------------------------------------------------
+
+type ApiContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+
+type ApiMessage =
+  | { role: 'user'; content: string | ApiContentBlock[] }
+  | { role: 'assistant'; content: string | ApiContentBlock[] };
+
+/**
+ * Build the API message history from our internal ChatMessage[]. For each
+ * historical assistant turn that included tool_use blocks, expand it into
+ * a structured assistant message + a synthetic user "tool_result" message,
+ * matching Anthropic's expected shape.
+ *
+ * The current user message is appended last as a plain text turn.
+ */
+function buildApiHistory(messages: ChatMessage[], userMsg: ChatMessage): ApiMessage[] {
+  const out: ApiMessage[] = [];
+  const recent = messages.filter((m) => m.id !== 'welcome').slice(-MAX_API_HISTORY);
+
+  for (const m of recent) {
+    if (m.role === 'user') {
+      out.push({ role: 'user', content: m.content });
+      continue;
+    }
+    // assistant — may carry tool calls + results
+    if (m.toolCalls?.length) {
+      const blocks: ApiContentBlock[] = [];
+      if (m.content) blocks.push({ type: 'text', text: m.content });
+      for (const tc of m.toolCalls) {
+        blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.input });
+      }
+      out.push({ role: 'assistant', content: blocks });
+
+      if (m.toolResults?.length) {
+        out.push({
+          role: 'user',
+          content: m.toolResults.map((r) => ({
+            type: 'tool_result' as const,
+            tool_use_id: r.tool_use_id,
+            content: r.content,
+            ...(r.is_error ? { is_error: true } : {}),
+          })),
+        });
+      }
+    } else if (m.content) {
+      out.push({ role: 'assistant', content: m.content });
+    }
+  }
+
+  out.push({ role: 'user', content: userMsg.content });
+  return out;
+}
+
 export function useChat(context: ProjectContext = {}, options: UseChatOptions = {}): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const onStreamCompleteRef = useRef(options.onStreamComplete);
-  onStreamCompleteRef.current = options.onStreamComplete;
+  const executeToolRef = useRef(options.executeTool);
+  executeToolRef.current = options.executeTool;
   const projectId = options.projectId ?? null;
 
   // ── Load persisted history on mount ──
@@ -139,191 +220,243 @@ export function useChat(context: ProjectContext = {}, options: UseChatOptions = 
     saveHistory(projectId, messages);
   }, [projectId, messages, isStreaming]);
 
-  const sendMessage = useCallback(
-    async (content: string) => {
-      if (isStreaming) return;
-      setLastError(null);
-
-      // Add user message
-      const userMsg: ChatMessage = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content,
-        timestamp: new Date().toISOString(),
-      };
-
-      const assistantMsgId = `asst-${Date.now()}`;
+  /**
+   * Run one streaming turn: POST current history, append a new assistant
+   * message that grows as tokens arrive, parse any tool_use blocks. Returns
+   * the captured text + tool calls so the caller can decide whether to loop.
+   */
+  const streamOneTurn = useCallback(
+    async (
+      historyForApi: ApiMessage[],
+      controller: AbortController
+    ): Promise<{ assistantMsgId: string; text: string; toolCalls: ToolCall[] }> => {
+      const assistantMsgId = `asst-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const assistantMsg: ChatMessage = {
         id: assistantMsgId,
         role: 'assistant',
         content: '',
         timestamp: new Date().toISOString(),
       };
+      setMessages((prev) => [...prev, assistantMsg]);
 
-      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: historyForApi,
+          ...context,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Chat API error: ${res.status}`);
+      }
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+      const pendingToolCalls = new Map<string, { name: string; jsonChunks: string[] }>();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === 'text') {
+              fullText += event.text;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, content: m.content + event.text } : m
+                )
+              );
+            } else if (event.type === 'content_block_delta' && event.delta?.text) {
+              fullText += event.delta.text;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: m.content + event.delta.text }
+                    : m
+                )
+              );
+            } else if (event.type === 'tool_use_start') {
+              pendingToolCalls.set(event.id, { name: event.name, jsonChunks: [] });
+            } else if (event.type === 'tool_use_delta') {
+              const pending = pendingToolCalls.get(event.id);
+              if (pending) pending.jsonChunks.push(event.partial_json);
+            } else if (event.type === 'tool_use_end') {
+              // No-op; we'll parse at the end
+            } else if (event.type === 'error') {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, content: `Error: ${event.error}` } : m
+                )
+              );
+            }
+          } catch {
+            // Ignore malformed JSON
+          }
+        }
+      }
+
+      const toolCalls: ToolCall[] = [];
+      for (const [id, tc] of pendingToolCalls) {
+        try {
+          const inputJson = tc.jsonChunks.join('');
+          const input = inputJson ? JSON.parse(inputJson) : {};
+          toolCalls.push({ id, name: tc.name, input });
+        } catch {
+          console.warn(`Failed to parse tool call ${id} (${tc.name}):`, tc.jsonChunks.join(''));
+        }
+      }
+      if (toolCalls.length > 0) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId ? { ...m, toolCalls } : m
+          )
+        );
+      }
+
+      return { assistantMsgId, text: fullText, toolCalls };
+    },
+    [context]
+  );
+
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (isStreaming) return;
+      setLastError(null);
+
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMsg]);
       setIsStreaming(true);
 
-      // Abort any previous request
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
       try {
-        // Build message history for the API (exclude welcome, only last 20 messages)
-        const apiMessages = [...messages.filter((m) => m.id !== 'welcome'), userMsg]
-          .slice(-20)
-          .map((m) => ({ role: m.role, content: m.content }));
+        // Working API history — grows across loop iterations as we feed
+        // tool results back to Claude. Cap base history at 20 turns.
+        let apiHistory: ApiMessage[] = buildApiHistory(messages, userMsg);
 
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: apiMessages,
-            ...context,
-          }),
-          signal: controller.signal,
-        });
+        for (let iter = 0; iter < MAX_AGENT_LOOP_ITERATIONS; iter++) {
+          const { text, toolCalls } = await streamOneTurn(apiHistory, controller);
 
-        if (!res.ok) {
-          throw new Error(`Chat API error: ${res.status}`);
-        }
+          // No tool calls? Agent is done with this turn.
+          if (toolCalls.length === 0) break;
 
-        const reader = res.body?.getReader();
-        if (!reader) throw new Error('No response body');
+          // Execute every tool call, collect results, then loop.
+          const exec = executeToolRef.current;
+          if (!exec) {
+            console.warn('[useChat] tool calls received but no executor configured');
+            break;
+          }
 
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let fullText = '';
-
-        // Tool use accumulation
-        const pendingToolCalls = new Map<string, { name: string; jsonChunks: string[] }>();
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-
-          // Parse SSE events
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
-
+          const results: ToolResult[] = [];
+          for (const tc of toolCalls) {
             try {
-              const event = JSON.parse(jsonStr);
-
-              if (event.type === 'text') {
-                // Streamed text content
-                fullText += event.text;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? { ...m, content: m.content + event.text }
-                      : m
-                  )
-                );
-              } else if (event.type === 'content_block_delta' && event.delta?.text) {
-                // Legacy format (mock responses)
-                fullText += event.delta.text;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? { ...m, content: m.content + event.delta.text }
-                      : m
-                  )
-                );
-              } else if (event.type === 'tool_use_start') {
-                // Tool call begins — start accumulating input JSON
-                pendingToolCalls.set(event.id, { name: event.name, jsonChunks: [] });
-              } else if (event.type === 'tool_use_delta') {
-                // Streamed tool input JSON chunk
-                const pending = pendingToolCalls.get(event.id);
-                if (pending) {
-                  pending.jsonChunks.push(event.partial_json);
-                }
-              } else if (event.type === 'tool_use_end') {
-                // Tool call complete — nothing else to do here, we'll parse at the end
-              } else if (event.type === 'done' || event.type === 'message_stop') {
-                // Stream complete
-              } else if (event.type === 'error') {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? { ...m, content: `Error: ${event.error}` }
-                      : m
-                  )
-                );
-              }
-            } catch {
-              // Ignore malformed JSON
+              const r = await exec(tc);
+              results.push(r);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              results.push({ tool_use_id: tc.id, content: `Tool execution failed: ${msg}`, is_error: true });
             }
           }
-        }
 
-        // Parse completed tool calls
-        const completedToolCalls: ToolCall[] = [];
-        for (const [id, tc] of pendingToolCalls) {
-          try {
-            const inputJson = tc.jsonChunks.join('');
-            const input = inputJson ? JSON.parse(inputJson) : {};
-            completedToolCalls.push({ id, name: tc.name, input });
-          } catch {
-            // Skip malformed tool call JSON
-            console.warn(`Failed to parse tool call ${id} (${tc.name}):`, tc.jsonChunks.join(''));
-          }
-        }
+          // Stash results on the assistant message for persistence/replay.
+          setMessages((prev) => {
+            const lastAssistantIdx = (() => {
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].role === 'assistant') return i;
+              }
+              return -1;
+            })();
+            if (lastAssistantIdx < 0) return prev;
+            return prev.map((m, i) =>
+              i === lastAssistantIdx ? { ...m, toolResults: results } : m
+            );
+          });
 
-        // Attach tool calls to the assistant message
-        if (completedToolCalls.length > 0) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, toolCalls: completedToolCalls }
-                : m
-            )
-          );
-        }
+          // Build the structured assistant message + tool_result user message
+          // and append to the running API history for the next iteration.
+          const assistantBlocks: ApiContentBlock[] = [
+            ...(text ? [{ type: 'text' as const, text }] : []),
+            ...toolCalls.map((tc) => ({
+              type: 'tool_use' as const,
+              id: tc.id,
+              name: tc.name,
+              input: tc.input,
+            })),
+          ];
+          const toolResultBlocks: ApiContentBlock[] = results.map((r) => ({
+            type: 'tool_result' as const,
+            tool_use_id: r.tool_use_id,
+            content: r.content,
+            ...(r.is_error ? { is_error: true } : {}),
+          }));
+          apiHistory = [
+            ...apiHistory,
+            { role: 'assistant', content: assistantBlocks },
+            { role: 'user', content: toolResultBlocks },
+          ];
 
-        // Stream finished — notify caller with text + tool calls
-        if (onStreamCompleteRef.current) {
-          onStreamCompleteRef.current(fullText, completedToolCalls);
+          if (controller.signal.aborted) break;
         }
       } catch (error) {
         if ((error as Error).name === 'AbortError') {
-          // User-initiated abort. Mark the assistant message so it's clear
-          // the response was stopped, and surface the cancellation as an
-          // error that the UI can show alongside a Retry affordance.
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, content: m.content || '(stopped)' }
-                : m
-            )
-          );
+          // User-initiated abort: mark the most recent assistant bubble as stopped.
+          setMessages((prev) => {
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (prev[i].role === 'assistant') {
+                return prev.map((m, idx) =>
+                  idx === i ? { ...m, content: m.content || '(stopped)' } : m
+                );
+              }
+            }
+            return prev;
+          });
           return;
         }
 
         const msg = error instanceof Error ? error.message : String(error);
         setLastError(msg);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? {
-                  ...m,
-                  content: m.content || 'Sorry, I encountered an error. Please try again.',
-                }
-              : m
-          )
-        );
+        setMessages((prev) => {
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].role === 'assistant') {
+              return prev.map((m, idx) =>
+                idx === i
+                  ? {
+                      ...m,
+                      content: m.content || 'Sorry, I encountered an error. Please try again.',
+                    }
+                  : m
+              );
+            }
+          }
+          return prev;
+        });
       } finally {
         setIsStreaming(false);
       }
     },
-    [isStreaming, messages, context]
+    [isStreaming, messages, streamOneTurn]
   );
 
   const stopStreaming = useCallback(() => {

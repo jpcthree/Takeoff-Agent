@@ -10,7 +10,7 @@ import { useChat } from '@/hooks/useChat';
 import { useProjectStore } from '@/hooks/useProjectStore';
 import { executeToolCall } from '@/lib/actions/chat-actions';
 import type { StoreCallbacks } from '@/lib/actions/chat-actions';
-import type { ToolCall } from '@/hooks/useChat';
+import type { ToolCall, ToolResult } from '@/hooks/useChat';
 import { getTradeModule } from '@/lib/trades/trade-loader';
 import type { CostDatabase } from '@/lib/engine/estimate-engine';
 
@@ -117,10 +117,11 @@ function ChatPanel() {
   ]);
 
   // ── Tool execution ──
-  const handleStreamComplete = useCallback(
-    async (_text: string, toolCalls: ToolCall[]) => {
-      if (toolCalls.length === 0) return;
-
+  // Called once per tool_use block. Returns a ToolResult containing the
+  // payload Claude needs to continue reasoning. The agentic loop in useChat
+  // will append this to the next API request.
+  const handleExecuteTool = useCallback(
+    async (toolCall: ToolCall): Promise<ToolResult> => {
       const store: StoreCallbacks = {
         getProjectMeta: () => projectMeta,
         getMeasurements: () => measurements,
@@ -153,9 +154,17 @@ function ChatPanel() {
         startMeasurementTool: (tool) => setActiveMeasurementTool(tool),
       };
 
-      for (const toolCall of toolCalls) {
-        await executeToolCall(toolCall, store);
-      }
+      const result = await executeToolCall(toolCall, store);
+      // Serialize the result for the model. Read tools attach a payload;
+      // mutate/UI tools just return a confirmation message.
+      const payload = result.payload !== undefined
+        ? { message: result.message, data: result.payload }
+        : { message: result.message };
+      return {
+        tool_use_id: toolCall.id,
+        content: JSON.stringify(payload),
+        is_error: !result.success,
+      };
     },
     [
       projectMeta,
@@ -181,7 +190,7 @@ function ChatPanel() {
   );
 
   const { messages, isStreaming, lastError, sendMessage, stopStreaming, clearMessages } = useChat(agentContext, {
-    onStreamComplete: handleStreamComplete,
+    executeTool: handleExecuteTool,
     projectId: projectMeta.id ?? null,
   });
 
